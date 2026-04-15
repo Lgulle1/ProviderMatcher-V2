@@ -27,6 +27,21 @@ function normLookupKey(val: string): string {
   return val.trim().toLowerCase()
 }
 
+function splitCategoryCell(value: string): string[] {
+  return value
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
+function toTitleCase(value: string): string {
+  return value
+    .toLowerCase()
+    .split(/\s+/)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+}
+
 export function detectConflicts(
   rows: Record<string, string>[],
   providerHeader: string,
@@ -174,9 +189,7 @@ export async function executeImportRun(params: ExecuteImportParams): Promise<Exe
   if (categoryHeader) {
     rows.forEach((row) => {
       const v = cellVal(row, categoryHeader)
-      if (v) {
-        uniqueCategoryValues.add(v)
-      }
+      splitCategoryCell(v).forEach((categoryPart) => uniqueCategoryValues.add(categoryPart))
     })
   }
 
@@ -185,7 +198,7 @@ export async function executeImportRun(params: ExecuteImportParams): Promise<Exe
     if (caseTypeIdByNorm.has(nk)) {
       continue
     }
-    const { data, error } = await createCaseType(orgId, name.trim())
+    const { data, error } = await createCaseType(orgId, toTitleCase(name))
     if (error || !data) {
       throw new Error(error ?? 'Failed to create case type')
     }
@@ -198,7 +211,7 @@ export async function executeImportRun(params: ExecuteImportParams): Promise<Exe
     if (categoryIdByNorm.has(nk)) {
       continue
     }
-    const { data, error } = await createCategory(orgId, name.trim())
+    const { data, error } = await createCategory(orgId, toTitleCase(name))
     if (error || !data) {
       throw new Error(error ?? 'Failed to create category')
     }
@@ -210,6 +223,7 @@ export async function executeImportRun(params: ExecuteImportParams): Promise<Exe
   const locationMappings = mappings.filter((m) => m.role === 'location' && m.locationId)
 
   const constraintById = new Map(orgConstraints.map((c) => [c.id, c]))
+  const importedProviderNameToId: Record<string, string> = {}
 
   for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
     const row = rows[rowIndex]
@@ -221,6 +235,7 @@ export async function executeImportRun(params: ExecuteImportParams): Promise<Exe
     if (!provName) {
       continue
     }
+    const normalizedProvName = normalizeName(provName)
 
     const conflict = conflictByRow.get(rowIndex)
     const resolution = conflict ? resolvedConflicts[String(rowIndex)] : undefined
@@ -232,9 +247,12 @@ export async function executeImportRun(params: ExecuteImportParams): Promise<Exe
     let providerId: string | null = null
     const isMerge = Boolean(conflict && resolution === 'merge')
 
-    if (isMerge && conflict) {
+    if (importedProviderNameToId[normalizedProvName]) {
+      providerId = importedProviderNameToId[normalizedProvName]
+    } else if (isMerge && conflict) {
       providerId = conflict.existingProvider.id
       providersUpdated += 1
+      importedProviderNameToId[normalizedProvName] = providerId
     } else if (conflict && resolution === 'separate') {
       const { data, error } = await createProvider({ org_id: orgId, name: provName })
       if (error || !data) {
@@ -242,6 +260,7 @@ export async function executeImportRun(params: ExecuteImportParams): Promise<Exe
       }
       providerId = data.id
       providersCreated += 1
+      importedProviderNameToId[normalizedProvName] = providerId
     } else if (!conflict) {
       const { data, error } = await createProvider({ org_id: orgId, name: provName })
       if (error || !data) {
@@ -249,6 +268,7 @@ export async function executeImportRun(params: ExecuteImportParams): Promise<Exe
       }
       providerId = data.id
       providersCreated += 1
+      importedProviderNameToId[normalizedProvName] = providerId
     } else {
       continue
     }
@@ -299,9 +319,12 @@ export async function executeImportRun(params: ExecuteImportParams): Promise<Exe
     const categoryIdsFromRow: string[] = []
     if (categoryHeader) {
       const catVal = cellVal(row, categoryHeader)
-      const cid = catVal ? categoryIdByNorm.get(normLookupKey(catVal)) : undefined
-      if (cid) {
-        categoryIdsFromRow.push(cid)
+      const categoryParts = splitCategoryCell(catVal)
+      for (const categoryPart of categoryParts) {
+        const cid = categoryIdByNorm.get(normLookupKey(categoryPart))
+        if (cid) {
+          categoryIdsFromRow.push(cid)
+        }
       }
     }
 

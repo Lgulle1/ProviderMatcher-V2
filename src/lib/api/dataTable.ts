@@ -3,7 +3,7 @@ import { supabase } from '../supabase'
 export async function getDataTableOfferings(orgId: string): Promise<any[]> {
   const { data, error } = await supabase
     .from('offerings')
-    .select('*, providers(name, category_ids, image_url)')
+    .select('*, providers(id, name, category_ids, image_url)')
     .eq('org_id', orgId)
     .eq('is_archived', false)
 
