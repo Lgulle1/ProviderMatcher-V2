@@ -14,8 +14,6 @@ import {
   uploadProviderImage,
 } from '../../lib/api/providers'
 import {
-  applyBookingLinkToAll,
-  deleteProviderLocation,
   getProviderLocations,
   upsertProviderLocation,
 } from '../../lib/api/providerLocations'
@@ -32,7 +30,6 @@ import type {
   Category,
   Constraint,
   Location as OrgLocation,
-  ProviderLocation,
 } from '../../types/database'
 
 interface ProviderFormValues {
@@ -68,7 +65,7 @@ export default function ProviderProfilePage() {
     payload?: any
   }>({ type: null })
   const [offeringCaseTypeId, setOfferingCaseTypeId] = useState('')
-  const [offeringLocationIds, setOfferingLocationIds] = useState<string[]>([])
+  const [offeringDraftLocationIds, setOfferingDraftLocationIds] = useState<string[]>([])
   const [offeringConstraints, setOfferingConstraints] = useState<Record<string, any>>({})
   const [offeringError, setOfferingError] = useState('')
   const [offeringSaving, setOfferingSaving] = useState(false)
@@ -195,12 +192,12 @@ export default function ProviderProfilePage() {
   useEffect(() => {
     if (modal.type === 'edit-offering' && modal.payload) {
       setOfferingCaseTypeId(modal.payload.case_type_id ?? '')
-      setOfferingLocationIds(modal.payload.location_ids ?? [])
+      setOfferingDraftLocationIds(modal.payload.location_ids ?? [])
       setOfferingConstraints(modal.payload.constraints ?? {})
     }
     if (modal.type === 'add-offering') {
       setOfferingCaseTypeId('')
-      setOfferingLocationIds([])
+      setOfferingDraftLocationIds([])
       setOfferingConstraints({})
       setOfferingError('')
     }
@@ -216,16 +213,14 @@ export default function ProviderProfilePage() {
     [categories, categoryIds]
   )
 
-  const providerLocationByLocationId = useMemo(() => {
-    const map = new Map<string, ProviderLocation>()
-    providerLocations.forEach((entry) => map.set(entry.location_id, entry))
+  const bookingLinkBaselineByLocationId = useMemo(() => {
+    const map = new Map<string, string>()
+    providerLocations.forEach((entry) => {
+      map.set(entry.location_id, (entry.booking_link ?? '').trim())
+    })
     return map
   }, [providerLocations])
 
-  const firstCheckedLocationId = useMemo(
-    () => orgLocations.find((location) => providerLocationByLocationId.has(location.id))?.id ?? null,
-    [orgLocations, providerLocationByLocationId]
-  )
   const caseTypeNameById = useMemo(() => {
     const map = new Map<string, string>()
     orgCaseTypes.forEach((caseType) => map.set(caseType.id, caseType.name))
@@ -237,8 +232,30 @@ export default function ProviderProfilePage() {
     return map
   }, [orgLocations])
 
+  const offeringLocationIds = useMemo(() => {
+    const set = new Set<string>()
+    offerings.forEach((offering) => {
+      ;(offering.location_ids ?? []).forEach((locId) => {
+        if (locId) {
+          set.add(locId)
+        }
+      })
+    })
+    const ids = Array.from(set)
+    ids.sort((a, b) => (locationNameById.get(a) ?? '').localeCompare(locationNameById.get(b) ?? ''))
+    return ids
+  }, [offerings, locationNameById])
+
+  const hasBookingLinkChanges = useMemo(() => {
+    return offeringLocationIds.some((locationId) => {
+      const current = (bookingLinks[locationId] ?? '').trim()
+      const baseline = bookingLinkBaselineByLocationId.get(locationId) ?? ''
+      return current !== baseline
+    })
+  }, [offeringLocationIds, bookingLinks, bookingLinkBaselineByLocationId])
+
   const hasCategoryChanges = !sameIds(categoryIds, originalCategoryIds)
-  const canSave = formState.isDirty || hasCategoryChanges
+  const canSave = formState.isDirty || hasCategoryChanges || hasBookingLinkChanges
 
   const colors = [
     'bg-indigo-500',
@@ -278,8 +295,19 @@ export default function ProviderProfilePage() {
       return
     }
 
+    for (const locationId of offeringLocationIds) {
+      const link = bookingLinks[locationId]?.trim() ?? ''
+      const saveResult = await upsertProviderLocation(id, locationId, link || null)
+      if (saveResult.error) {
+        toast.error(saveResult.error)
+        setIsSaving(false)
+        return
+      }
+    }
+
     await queryClient.invalidateQueries({ queryKey: ['provider', id] })
     await queryClient.invalidateQueries({ queryKey: ['providers', orgId] })
+    await queryClient.invalidateQueries({ queryKey: ['provider-locations', id] })
     toast.success('Changes saved')
     reset(
       {
@@ -335,50 +363,6 @@ export default function ProviderProfilePage() {
     navigate('/providers')
   }
 
-  async function handleToggleLocation(locationId: string, checked: boolean) {
-    if (!id) return
-
-    const result = checked
-      ? await upsertProviderLocation(id, locationId, null)
-      : await deleteProviderLocation(id, locationId)
-
-    if (result.error) {
-      toast.error(result.error)
-      return
-    }
-
-    await queryClient.invalidateQueries({ queryKey: ['provider-locations', id] })
-  }
-
-  async function handleBookingBlur(locationId: string) {
-    if (!id) return
-    const hasLocation = providerLocationByLocationId.has(locationId)
-    if (!hasLocation) return
-
-    const link = bookingLinks[locationId]?.trim() ?? ''
-    const result = await upsertProviderLocation(id, locationId, link || null)
-    if (result.error) {
-      toast.error(result.error)
-      return
-    }
-
-    await queryClient.invalidateQueries({ queryKey: ['provider-locations', id] })
-  }
-
-  async function handleApplyAll(locationId: string) {
-    if (!id) return
-    const link = bookingLinks[locationId]?.trim() ?? ''
-
-    const result = await applyBookingLinkToAll(id, link)
-    if (result.error) {
-      toast.error(result.error)
-      return
-    }
-
-    await queryClient.invalidateQueries({ queryKey: ['provider-locations', id] })
-    toast.success('Booking link applied to all locations')
-  }
-
   async function handleSaveOffering() {
     if (!id) return
     if (!offeringCaseTypeId) {
@@ -394,7 +378,7 @@ export default function ProviderProfilePage() {
         provider_id: id,
         case_type_id: offeringCaseTypeId,
         org_id: orgId,
-        location_ids: offeringLocationIds,
+        location_ids: offeringDraftLocationIds,
         constraints: offeringConstraints,
       })
       if (result.error) {
@@ -407,7 +391,7 @@ export default function ProviderProfilePage() {
     if (modal.type === 'edit-offering' && modal.payload?.id) {
       const result = await updateOffering(modal.payload.id, {
         case_type_id: offeringCaseTypeId,
-        location_ids: offeringLocationIds,
+        location_ids: offeringDraftLocationIds,
         constraints: offeringConstraints,
       })
       if (result.error) {
@@ -591,18 +575,14 @@ export default function ProviderProfilePage() {
       <div className="mb-4 rounded-xl border border-slate-200 bg-white p-6">
         <h2 className="mb-4 font-semibold text-slate-900">Locations &amp; Booking Links</h2>
 
-        {providerLocationsLoading || orgLocationsLoading ? (
+        {providerLocationsLoading || orgLocationsLoading || offeringsLoading ? (
           <div className="py-8">
             <LoadingSpinner />
           </div>
-        ) : orgLocations.length === 0 ? (
+        ) : offeringLocationIds.length === 0 ? (
           <div className="py-4">
             <p className="text-sm text-slate-500">
-              No locations yet. Add locations in the{' '}
-              <Link to="/locations" className="text-indigo-600 hover:underline">
-                Locations
-              </Link>{' '}
-              tab.
+              No offering locations yet. Add locations to this provider&apos;s offerings to manage booking links.
             </p>
           </div>
         ) : (
@@ -610,51 +590,32 @@ export default function ProviderProfilePage() {
             <div className="flex items-center gap-4 border-b border-slate-200 pb-2 text-xs uppercase tracking-wider text-slate-500">
               <div className="w-1/3">Location</div>
               <div className="flex-1">Booking Link</div>
-              <div className="w-28">Apply to All</div>
             </div>
 
-            {orgLocations.map((location, index) => {
-              const providerLocation = providerLocationByLocationId.get(location.id)
-              const isChecked = Boolean(providerLocation)
-              const isFirstChecked = firstCheckedLocationId === location.id
+            {offeringLocationIds.map((locationId, index) => {
+              const locationName = locationNameById.get(locationId) ?? 'Unknown location'
 
               return (
                 <div
-                  key={location.id}
+                  key={locationId}
                   className={[
                     'flex items-center gap-4 py-3',
-                    index === orgLocations.length - 1 ? '' : 'border-b border-slate-100',
+                    index === offeringLocationIds.length - 1 ? '' : 'border-b border-slate-100',
                   ].join(' ')}
                 >
-                  <div className="flex w-1/3 items-center">
-                    <input
-                      type="checkbox"
-                      checked={isChecked}
-                      onChange={(event) => handleToggleLocation(location.id, event.target.checked)}
-                    />
-                    <span className="ml-3 text-sm text-slate-700">{location.name}</span>
+                  <div className="w-1/3">
+                    <span className="text-sm text-slate-700">{locationName}</span>
                   </div>
 
                   <div className="flex-1">
                     <input
                       type="text"
-                      value={bookingLinks[location.id] ?? ''}
+                      value={bookingLinks[locationId] ?? ''}
                       onChange={(event) =>
-                        setBookingLinks((prev) => ({ ...prev, [location.id]: event.target.value }))
+                        setBookingLinks((prev) => ({ ...prev, [locationId]: event.target.value }))
                       }
-                      onBlur={() => handleBookingBlur(location.id)}
-                      disabled={!isChecked}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                      className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
                     />
-                  </div>
-
-                  <div className="w-28">
-                    {isFirstChecked ? (
-                      <label className="flex items-center gap-2 text-xs text-slate-600">
-                        <input type="checkbox" checked={false} onChange={() => handleApplyAll(location.id)} />
-                        All
-                      </label>
-                    ) : null}
                   </div>
                 </div>
               )
@@ -797,9 +758,9 @@ export default function ProviderProfilePage() {
                 <label key={location.id} className="flex items-center gap-2 text-sm text-slate-700">
                   <input
                     type="checkbox"
-                    checked={offeringLocationIds.includes(location.id)}
+                    checked={offeringDraftLocationIds.includes(location.id)}
                     onChange={(e) => {
-                      setOfferingLocationIds((prev) =>
+                      setOfferingDraftLocationIds((prev) =>
                         e.target.checked
                           ? [...prev, location.id]
                           : prev.filter((existingId) => existingId !== location.id)

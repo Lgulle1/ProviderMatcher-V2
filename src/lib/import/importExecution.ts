@@ -311,7 +311,7 @@ export async function executeImportRun(params: ExecuteImportParams): Promise<Exe
     const locationIds: string[] = []
     for (const lm of locationMappings) {
       const cell = (row[lm.excelHeader] ?? '').trim()
-      if (cell && lm.locationId) {
+      if (lm.locationId && isTruthyBinary(cell)) {
         locationIds.push(lm.locationId)
       }
     }

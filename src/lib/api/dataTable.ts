@@ -82,11 +82,52 @@ export async function archiveOfferings(offeringIds: string[]): Promise<{ error: 
 }
 
 export async function archiveAllOfferings(orgId: string): Promise<{ error: string | null }> {
-  const { error } = await supabase
-    .from('offerings')
-    .update({ is_archived: true })
+  const { data: providers, error: providersError } = await supabase
+    .from('providers')
+    .select('id')
     .eq('org_id', orgId)
-    .eq('is_archived', false)
 
-  return { error: error?.message ?? null }
+  if (providersError) {
+    return { error: providersError.message }
+  }
+
+  const providerIds = (providers ?? []).map((p) => p.id).filter(Boolean)
+
+  if (providerIds.length > 0) {
+    const { error: providerLocationsError } = await supabase
+      .from('provider_locations')
+      .delete()
+      .in('provider_id', providerIds)
+
+    if (providerLocationsError) {
+      return { error: providerLocationsError.message }
+    }
+  }
+
+  const { error: offeringsError } = await supabase.from('offerings').delete().eq('org_id', orgId)
+  if (offeringsError) {
+    return { error: offeringsError.message }
+  }
+
+  const { error: providersDeleteError } = await supabase.from('providers').delete().eq('org_id', orgId)
+  if (providersDeleteError) {
+    return { error: providersDeleteError.message }
+  }
+
+  const { error: categoriesError } = await supabase.from('categories').delete().eq('org_id', orgId)
+  if (categoriesError) {
+    return { error: categoriesError.message }
+  }
+
+  const { error: caseTypesError } = await supabase.from('case_types').delete().eq('org_id', orgId)
+  if (caseTypesError) {
+    return { error: caseTypesError.message }
+  }
+
+  const { error: importHistoryError } = await supabase.from('import_history').delete().eq('org_id', orgId)
+  if (importHistoryError) {
+    return { error: importHistoryError.message }
+  }
+
+  return { error: null }
 }

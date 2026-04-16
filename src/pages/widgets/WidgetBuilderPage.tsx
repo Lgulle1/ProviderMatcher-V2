@@ -371,11 +371,17 @@ export default function WidgetBuilderPage() {
       return
     }
     setActionLoading(true)
+    const entryQuestionId = questions.find((q) => q.question_type === 'entry')?.id
+    const scopedQuestionIdsBase = config.scoped_question_ids ?? []
+    const scopedQuestionIds =
+      entryQuestionId && !scopedQuestionIdsBase.includes(entryQuestionId)
+        ? [...scopedQuestionIdsBase, entryQuestionId]
+        : scopedQuestionIdsBase
     const snapshot = {
       scoped_provider_ids: config.scoped_provider_ids ?? [],
       scoped_case_type_ids: config.scoped_case_type_ids ?? [],
       scoped_location_ids: config.scoped_location_ids ?? [],
-      scoped_question_ids: config.scoped_question_ids ?? [],
+      scoped_question_ids: scopedQuestionIds,
       question_order: config.question_order ?? [],
       primary_color: config.primary_color ?? widget?.primary_color ?? '#4F46E5',
       button_text: config.button_text ?? widget?.button_text ?? 'Find a Provider',
