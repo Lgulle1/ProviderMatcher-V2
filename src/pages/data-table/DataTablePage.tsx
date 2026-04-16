@@ -35,6 +35,22 @@ function getProvider(offering: Record<string, unknown>) {
   return provider ?? null
 }
 
+function patchProvider(
+  offering: Record<string, unknown>,
+  patcher: (provider: Record<string, unknown>) => Record<string, unknown>
+) {
+  const provider = offering.providers
+  if (Array.isArray(provider)) {
+    const first = provider[0]
+    if (!first || typeof first !== 'object') return offering
+    return { ...offering, providers: [patcher(first as Record<string, unknown>), ...provider.slice(1)] }
+  }
+  if (provider && typeof provider === 'object') {
+    return { ...offering, providers: patcher(provider as Record<string, unknown>) }
+  }
+  return offering
+}
+
 type TriState = 'both' | 'yes' | 'no'
 
 function isBinaryYes(value: unknown): boolean {
@@ -83,6 +99,7 @@ export default function DataTablePage() {
   const [bulkAddLocationId, setBulkAddLocationId] = useState('')
   const [bulkRemoveLocationId, setBulkRemoveLocationId] = useState('')
   const [bulkCategoryId, setBulkCategoryId] = useState('')
+  const offeringsQueryKey = ['data-table-offerings', orgId] as const
 
   const { data: offerings = [], isLoading: offeringsLoading } = useQuery({
     queryKey: ['data-table-offerings', orgId],
@@ -317,6 +334,15 @@ export default function DataTablePage() {
     })
   }
 
+  const patchOfferingCache = useCallback(
+    (offeringId: string, patcher: (offering: Record<string, unknown>) => Record<string, unknown>) => {
+      queryClient.setQueryData(offeringsQueryKey, (prev: Record<string, unknown>[] | undefined) =>
+        (prev ?? []).map((offering) => (offering.id === offeringId ? patcher(offering) : offering))
+      )
+    },
+    [offeringsQueryKey, queryClient]
+  )
+
   const toggleOfferingLocation = useCallback(
     async (offering: Record<string, unknown>, locationId: string) => {
       const oid = offering.id as string
@@ -324,6 +350,9 @@ export default function DataTablePage() {
       const current: string[] = [...((offering.location_ids as string[]) ?? [])]
       const has = current.includes(locationId)
       const next = has ? current.filter((id) => id !== locationId) : [...current, locationId]
+      const previousOfferings = queryClient.getQueryData<Record<string, unknown>[]>(offeringsQueryKey)
+
+      patchOfferingCache(oid, (cached) => ({ ...cached, location_ids: next }))
 
       startSave(key)
       const result = await updateOfferingLocationIds(oid, next)
@@ -331,12 +360,11 @@ export default function DataTablePage() {
 
       if (result.error) {
         toast.error(result.error)
-        await queryClient.invalidateQueries({ queryKey: ['data-table-offerings', orgId] })
+        queryClient.setQueryData(offeringsQueryKey, previousOfferings)
         return
       }
-      await queryClient.invalidateQueries({ queryKey: ['data-table-offerings', orgId] })
     },
-    [orgId, queryClient, toast]
+    [offeringsQueryKey, patchOfferingCache, queryClient, toast]
   )
 
   const toggleBinaryConstraint = useCallback(
@@ -347,6 +375,15 @@ export default function DataTablePage() {
       const current = cons[constraint.mapped_key]
       const isYes = isBinaryYes(current)
       const newVal = isYes ? 0 : 1
+      const previousOfferings = queryClient.getQueryData<Record<string, unknown>[]>(offeringsQueryKey)
+
+      patchOfferingCache(oid, (cached) => ({
+        ...cached,
+        constraints: {
+          ...((cached.constraints ?? {}) as Record<string, unknown>),
+          [constraint.mapped_key]: newVal,
+        },
+      }))
 
       startSave(key)
       const result = await updateOfferingConstraint(oid, constraint.mapped_key, newVal)
@@ -354,12 +391,11 @@ export default function DataTablePage() {
 
       if (result.error) {
         toast.error(result.error)
-        await queryClient.invalidateQueries({ queryKey: ['data-table-offerings', orgId] })
+        queryClient.setQueryData(offeringsQueryKey, previousOfferings)
         return
       }
-      await queryClient.invalidateQueries({ queryKey: ['data-table-offerings', orgId] })
     },
-    [orgId, queryClient, toast]
+    [offeringsQueryKey, patchOfferingCache, queryClient, toast]
   )
 
   const visibleLocations = useMemo(
@@ -431,12 +467,19 @@ export default function DataTablePage() {
                 className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
                 value={(offering.case_type_id as string) ?? ''}
                 onChange={async (e) => {
-                  const result = await updateOfferingCaseType(offering.id as string, e.target.value)
+                  const nextCaseTypeId = e.target.value
+                  const previousOfferings = queryClient.getQueryData<Record<string, unknown>[]>(offeringsQueryKey)
+                  patchOfferingCache(offering.id as string, (cached) => ({
+                    ...cached,
+                    case_type_id: nextCaseTypeId,
+                  }))
+
+                  const result = await updateOfferingCaseType(offering.id as string, nextCaseTypeId)
                   if (result.error) {
                     toast.error(result.error)
+                    queryClient.setQueryData(offeringsQueryKey, previousOfferings)
                     return
                   }
-                  await queryClient.invalidateQueries({ queryKey: ['data-table-offerings', orgId] })
                   setCaseTypeEditorOfferingId(null)
                   setCaseTypeSavedOfferingId(offering.id as string)
                   toast.success('Case type updated')
@@ -511,12 +554,27 @@ export default function DataTablePage() {
                           const next = e.target.checked
                             ? [...providerCategoryIds, category.id]
                             : providerCategoryIds.filter((id: string) => id !== category.id)
+                          const providerId = provider.id as string
+                          const previousOfferings = queryClient.getQueryData<Record<string, unknown>[]>(offeringsQueryKey)
+                          queryClient.setQueryData(
+                            offeringsQueryKey,
+                            (prev: Record<string, unknown>[] | undefined) =>
+                              (prev ?? []).map((cachedOffering) =>
+                                (cachedOffering.provider_id as string) === providerId
+                                  ? patchProvider(cachedOffering, (cachedProvider) => ({
+                                      ...cachedProvider,
+                                      category_ids: next,
+                                    }))
+                                  : cachedOffering
+                              )
+                          )
+
                           const result = await updateProviderCategories(provider.id as string, next)
                           if (result.error) {
                             toast.error(result.error)
+                            queryClient.setQueryData(offeringsQueryKey, previousOfferings)
                             return
                           }
-                          await queryClient.invalidateQueries({ queryKey: ['data-table-offerings', orgId] })
                           toast.success('Categories updated')
                         }}
                       />
@@ -632,19 +690,28 @@ export default function DataTablePage() {
                   onBlur={async (e) => {
                     const v = e.target.value
                     const num = v === '' ? NaN : Number(v)
+                    const nextValue = v === '' ? null : Number.isNaN(num) ? v : num
                     const key = `${offering.id as string}:con:${constraint.id}:rmin`
+                    const previousOfferings = queryClient.getQueryData<Record<string, unknown>[]>(offeringsQueryKey)
+                    patchOfferingCache(offering.id as string, (cached) => ({
+                      ...cached,
+                      constraints: {
+                        ...((cached.constraints ?? {}) as Record<string, unknown>),
+                        [minKey]: nextValue,
+                      },
+                    }))
                     startSave(key)
                     const result = await updateOfferingConstraint(
                       offering.id as string,
                       minKey,
-                      v === '' ? null : Number.isNaN(num) ? v : num
+                      nextValue
                     )
                     endSave(key)
                     if (result.error) {
                       toast.error(result.error)
+                      queryClient.setQueryData(offeringsQueryKey, previousOfferings)
                       return
                     }
-                    await queryClient.invalidateQueries({ queryKey: ['data-table-offerings', orgId] })
                   }}
                 />
                 <input
@@ -655,19 +722,28 @@ export default function DataTablePage() {
                     if (!maxKey) return
                     const v = e.target.value
                     const num = v === '' ? NaN : Number(v)
+                    const nextValue = v === '' ? null : Number.isNaN(num) ? v : num
                     const key = `${offering.id as string}:con:${constraint.id}:rmax`
+                    const previousOfferings = queryClient.getQueryData<Record<string, unknown>[]>(offeringsQueryKey)
+                    patchOfferingCache(offering.id as string, (cached) => ({
+                      ...cached,
+                      constraints: {
+                        ...((cached.constraints ?? {}) as Record<string, unknown>),
+                        [maxKey]: nextValue,
+                      },
+                    }))
                     startSave(key)
                     const result = await updateOfferingConstraint(
                       offering.id as string,
                       maxKey,
-                      v === '' ? null : Number.isNaN(num) ? v : num
+                      nextValue
                     )
                     endSave(key)
                     if (result.error) {
                       toast.error(result.error)
+                      queryClient.setQueryData(offeringsQueryKey, previousOfferings)
                       return
                     }
-                    await queryClient.invalidateQueries({ queryKey: ['data-table-offerings', orgId] })
                   }}
                 />
               </div>
@@ -686,14 +762,22 @@ export default function DataTablePage() {
                 if (t) clearTimeout(t)
                 exactDebounceRef.current[exactKey] = setTimeout(async () => {
                   const key = `${offering.id as string}:con:${constraint.id}:ex`
+                  const previousOfferings = queryClient.getQueryData<Record<string, unknown>[]>(offeringsQueryKey)
+                  patchOfferingCache(offering.id as string, (cached) => ({
+                    ...cached,
+                    constraints: {
+                      ...((cached.constraints ?? {}) as Record<string, unknown>),
+                      [constraint.mapped_key]: val,
+                    },
+                  }))
                   startSave(key)
                   const result = await updateOfferingConstraint(offering.id as string, constraint.mapped_key, val)
                   endSave(key)
                   if (result.error) {
                     toast.error(result.error)
+                    queryClient.setQueryData(offeringsQueryKey, previousOfferings)
                     return
                   }
-                  await queryClient.invalidateQueries({ queryKey: ['data-table-offerings', orgId] })
                 }, 300)
               }}
             />
@@ -731,6 +815,8 @@ export default function DataTablePage() {
     categoryMap,
     navigate,
     orgId,
+    offeringsQueryKey,
+    patchOfferingCache,
     queryClient,
     selectedRows,
     toast,

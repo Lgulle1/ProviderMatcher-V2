@@ -429,13 +429,24 @@ export default function ProviderProfilePage() {
 
   return (
     <>
-    <div>
-      <div className="mb-6">
+    <div className="pt-16">
+      <div className="fixed left-0 right-0 top-16 z-40 flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4">
         <Link to="/providers" className="flex items-center gap-1 text-sm text-indigo-600 hover:underline">
           <ChevronLeft className="h-4 w-4" />
           Back to Providers
         </Link>
-        <p className="mt-2 text-sm text-slate-500">Providers → {provider.name}</p>
+        <button
+          type="button"
+          onClick={() => void handleSubmit(onSubmit)()}
+          disabled={!canSave || isSaving}
+          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {isSaving ? 'Saving...' : 'Save Changes'}
+        </button>
+      </div>
+
+      <div className="mb-6">
+        <p className="text-sm text-slate-500">Providers → {provider.name}</p>
       </div>
 
       <div className="mb-4 rounded-xl border border-slate-200 bg-white p-6">
@@ -561,13 +572,6 @@ export default function ProviderProfilePage() {
               </select>
             </div>
 
-            <button
-              type="submit"
-              disabled={!canSave || isSaving}
-              className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isSaving ? 'Saving...' : 'Save Changes'}
-            </button>
           </form>
         </div>
       </div>
