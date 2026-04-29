@@ -12,6 +12,17 @@
     })
   }
 
+  function fisherYatesShuffle(arr) {
+    var a = arr.slice()
+    for (var i = a.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1))
+      var tmp = a[i]
+      a[i] = a[j]
+      a[j] = tmp
+    }
+    return a
+  }
+
   /** Matches LogicTester: range needs min and/or max column populated to count as “has data”. */
   function hasConstraintDataForSkip(offerings, c) {
     if (c.type === 'range') {
@@ -762,8 +773,94 @@
         this.showZeroResults()
         return
       }
+      unique = fisherYatesShuffle(unique)
       var results = document.createElement('div')
       results.className = 'pm-results'
+      var renderOptionDCard = function (provider) {
+        var card = document.createElement('div')
+        card.className = 'pm-card'
+        var avatar
+        if (provider.image_url) {
+          avatar = document.createElement('img')
+          avatar.src = provider.image_url
+          avatar.alt = provider.name
+          avatar.className = 'pm-avatar'
+        } else {
+          avatar = document.createElement('div')
+          avatar.className = 'pm-avatar'
+          var colors = [
+            '#6366f1',
+            '#8b5cf6',
+            '#3b82f6',
+            '#10b981',
+            '#f59e0b',
+            '#ef4444',
+            '#ec4899',
+            '#06b6d4',
+          ]
+          var idx =
+            provider.name.split('').reduce(function (a, c) {
+              return a + c.charCodeAt(0)
+            }, 0) % colors.length
+          avatar.style.background = colors[idx]
+          var words = provider.name.split(' ')
+          avatar.textContent = (
+            (words[0] ? words[0][0] : '') +
+            (words[words.length - 1] ? words[words.length - 1][0] : '')
+          ).toUpperCase()
+        }
+        card.appendChild(avatar)
+
+        var info = document.createElement('div')
+        info.className = 'pm-info'
+        var name = document.createElement('div')
+        name.className = 'pm-name'
+        name.textContent = provider.name
+        info.appendChild(name)
+
+        var pills = document.createElement('div')
+        ;(provider.category_ids || []).forEach(function (catId) {
+          var cat = (self.data.categories || []).find(function (c) {
+            return c.id === catId
+          })
+          if (!cat) return
+          var pill = document.createElement('span')
+          pill.setAttribute(
+            'style',
+            'display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;margin:2px 2px 0 0;background:#EFF6FF;color:#1D4ED8'
+          )
+          pill.textContent = cat.name
+          pills.appendChild(pill)
+        })
+        info.appendChild(pills)
+        card.appendChild(info)
+
+        var bookingLink = null
+        var provLocs = (self.data.providerLocations || []).filter(function (pl) {
+          return pl.provider_id === provider.id
+        })
+        if (self.state.selectedLocationId) {
+          var pl = provLocs.find(function (p) {
+            return p.location_id === self.state.selectedLocationId
+          })
+          if (pl) bookingLink = pl.booking_link
+        }
+        if (!bookingLink && provLocs.length) bookingLink = provLocs[0].booking_link
+        if (bookingLink) {
+          var book = document.createElement('a')
+          book.className = 'pm-book'
+          book.href = bookingLink
+          book.target = '_blank'
+          book.rel = 'noopener noreferrer'
+          book.textContent = 'Book Now'
+          book.onclick = function () {
+            self.trackClick(provider.id)
+          }
+          card.appendChild(book)
+        }
+
+        return card
+      }
       if (this.state.bypassMode) {
         var search = document.createElement('input')
         search.className = 'pm-search'
@@ -796,7 +893,7 @@
         }
         results.appendChild(helpLink)
         unique.forEach(function (item) {
-          results.appendChild(self.buildCard(item.provider))
+          results.appendChild(renderOptionDCard(item.provider))
         })
       } else {
         var remaining = unique.slice()
@@ -829,17 +926,23 @@
               'There are no specialists for this case type at ' + locName + '.'
             results.appendChild(noMatch)
           } else {
-            this.renderGrouped(results, atLoc)
+            atLoc.forEach(function (item) {
+              results.appendChild(renderOptionDCard(item.provider))
+            })
           }
           if (outsideLoc.length) {
             var sec3 = document.createElement('div')
             sec3.className = 'pm-section-title'
             sec3.textContent = 'Providers outside ' + locName
             results.appendChild(sec3)
-            this.renderGrouped(results, outsideLoc)
+            outsideLoc.forEach(function (item) {
+              results.appendChild(renderOptionDCard(item.provider))
+            })
           }
         } else {
-          this.renderGrouped(results, remaining)
+          remaining.forEach(function (item) {
+            results.appendChild(renderOptionDCard(item.provider))
+          })
         }
       }
       var config = this.data.config || {}
