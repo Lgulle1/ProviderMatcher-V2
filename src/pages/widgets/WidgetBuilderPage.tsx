@@ -350,7 +350,7 @@ export default function WidgetBuilderPage() {
   const allRequirementsMet = reqProvidersOk && reqCaseTypesOk && reqEntryOk
 
   const embedScript = id
-    ? `<script src="[YOUR_CDN_URL]/widget.js" data-widget-id="${id}"></script>`
+    ? `<script src="https://providermatcher.netlify.app/widget.js" data-widget-id="${id}"></script>`
     : ''
 
   async function copyEmbedCode() {
@@ -1026,7 +1026,7 @@ export default function WidgetBuilderPage() {
                     {embedScript}
                   </pre>
                   <p className="mb-3 text-xs text-slate-500">
-                    Replace [YOUR_CDN_URL] with your widget CDN URL after deployment
+                    Replace https://providermatcher.netlify.app with your widget CDN URL after deployment
                   </p>
                   <button
                     type="button"

@@ -96,7 +96,7 @@ export default function WidgetsPage() {
 
   const embedScript =
     modal.type === 'embed' && modal.payload
-      ? `<script src="[YOUR_CDN_URL]/widget.js" data-widget-id="${modal.payload.id}"></script>`
+      ? `<script src="https://providermatcher.netlify.app/widget.js" data-widget-id="${modal.payload.id}"></script>`
       : ''
 
   async function copyEmbedCode() {
@@ -256,7 +256,7 @@ export default function WidgetsPage() {
             </pre>
 
             <p className="mt-3 text-xs text-slate-500">
-              Replace [YOUR_CDN_URL] with your widget CDN URL after deployment
+              Replace https://providermatcher.netlify.app with your widget CDN URL after deployment
             </p>
 
             <button
