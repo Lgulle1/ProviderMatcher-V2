@@ -2,7 +2,7 @@ const esbuild = require('esbuild')
 const isProd = process.env.NODE_ENV === 'production'
 
 /** Set SUPABASE_URL to your project URL (e.g. https://xyzcompany.supabase.co) for production builds. */
-const supabaseProjectUrl = process.env.SUPABASE_URL || 'http://localhost:54321'
+const supabaseProjectUrl = process.env.SUPABASE_URL || 'https://wuhtfeptdrbdlmnxtumo.supabase.co'
 
 esbuild
   .build({
