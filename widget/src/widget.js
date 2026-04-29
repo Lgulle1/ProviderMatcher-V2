@@ -408,8 +408,10 @@
         body.appendChild(sub)
         body.scrollTop = body.scrollHeight
       }
-      if (q.question_type === 'entry') this.renderCaseTypes(q)
-      else if (q.question_type === 'location') this.renderLocationSelect(q)
+      if (q.question_type === 'entry') {
+        this.renderCaseTypes(q)
+        body.scrollTop = 0
+      } else if (q.question_type === 'location') this.renderLocationSelect(q)
       else if (q.question_type === 'provider') this.renderProviderChoice(q)
       else if (q.question_type === 'clinical') {
         var c = this.findConstraint(q.constraint_id)
@@ -471,6 +473,10 @@
       var sel = document.createElement('select')
       sel.className = 'pm-select'
       sel.innerHTML = '<option value="">Select a location...</option>'
+      var noPreferenceOpt = document.createElement('option')
+      noPreferenceOpt.value = 'no-preference'
+      noPreferenceOpt.textContent = 'No preference'
+      sel.appendChild(noPreferenceOpt)
       locs.forEach(function (l) {
         var opt = document.createElement('option')
         opt.value = l.id
@@ -482,6 +488,10 @@
       btn.textContent = 'Next'
       btn.onclick = function () {
         if (!sel.value) return
+        if (sel.value === 'no-preference') {
+          self.handleAnswer(q, null, 'No preference')
+          return
+        }
         self.state.selectedLocationId = sel.value
         var loc = locs.find(function (l) {
           return l.id === sel.value
@@ -791,12 +801,24 @@
           var colors = [
             '#6366f1',
             '#8b5cf6',
+            '#a855f7',
             '#3b82f6',
+            '#0ea5e9',
+            '#06b6d4',
             '#10b981',
+            '#22c55e',
             '#f59e0b',
+            '#f97316',
             '#ef4444',
             '#ec4899',
-            '#06b6d4',
+            '#d946ef',
+            '#14b8a6',
+            '#84cc16',
+            '#e11d48',
+            '#7c3aed',
+            '#2563eb',
+            '#0891b2',
+            '#059669',
           ]
           var idx =
             provider.name.split('').reduce(function (a, c) {
@@ -804,10 +826,9 @@
             }, 0) % colors.length
           avatar.style.background = colors[idx]
           var words = provider.name.split(' ')
-          avatar.textContent = (
-            (words[0] ? words[0][0] : '') +
-            (words[words.length - 1] ? words[words.length - 1][0] : '')
-          ).toUpperCase()
+          var firstInitial = words[0] ? words[0][0] : ''
+          var lastInitial = words[words.length - 1] ? words[words.length - 1][0] : ''
+          avatar.textContent = (words.length > 1 ? firstInitial + lastInitial : firstInitial).toUpperCase()
         }
         card.appendChild(avatar)
 
@@ -1007,12 +1028,24 @@
         var colors = [
           '#6366f1',
           '#8b5cf6',
+          '#a855f7',
           '#3b82f6',
+          '#0ea5e9',
+          '#06b6d4',
           '#10b981',
+          '#22c55e',
           '#f59e0b',
+          '#f97316',
           '#ef4444',
           '#ec4899',
-          '#06b6d4',
+          '#d946ef',
+          '#14b8a6',
+          '#84cc16',
+          '#e11d48',
+          '#7c3aed',
+          '#2563eb',
+          '#0891b2',
+          '#059669',
         ]
         var idx =
           provider.name.split('').reduce(function (a, c) {
@@ -1020,10 +1053,9 @@
           }, 0) % colors.length
         avatar.style.background = colors[idx]
         var words = provider.name.split(' ')
-        avatar.textContent = (
-          (words[0] ? words[0][0] : '') +
-          (words[words.length - 1] ? words[words.length - 1][0] : '')
-        ).toUpperCase()
+        var firstInitial = words[0] ? words[0][0] : ''
+        var lastInitial = words[words.length - 1] ? words[words.length - 1][0] : ''
+        avatar.textContent = (words.length > 1 ? firstInitial + lastInitial : firstInitial).toUpperCase()
       }
       var info = document.createElement('div')
       info.className = 'pm-info'
