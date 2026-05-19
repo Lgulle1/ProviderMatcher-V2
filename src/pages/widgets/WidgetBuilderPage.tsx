@@ -1025,9 +1025,6 @@ export default function WidgetBuilderPage() {
                   <pre className="mb-3 overflow-x-auto rounded-xl bg-slate-900 p-4 font-mono text-sm text-green-400">
                     {embedScript}
                   </pre>
-                  <p className="mb-3 text-xs text-slate-500">
-                    Replace https://providermatcher.netlify.app with your widget CDN URL after deployment
-                  </p>
                   <button
                     type="button"
                     onClick={() => void copyEmbedCode()}
