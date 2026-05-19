@@ -187,7 +187,7 @@ export default function ProvidersPage() {
             const words = provider.name.trim().split(/\s+/).filter(Boolean)
             const first = words[0]?.[0] ?? ''
             const last = words[words.length - 1]?.[0] ?? ''
-            const initials = `${first}${last}`.toUpperCase() || provider.name.slice(0, 2).toUpperCase()
+            const initials = (words.length > 1 ? `${first}${last}` : first).toUpperCase()
             const idx =
               provider.name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length
             const providerCategories = provider.category_ids

@@ -435,7 +435,9 @@
         }
         body.appendChild(skipBtn)
       }
-      body.scrollTop = body.scrollHeight
+      if (q.question_type !== 'entry') {
+        body.scrollTop = body.scrollHeight
+      }
     },
 
     renderCaseTypes: function (q) {
@@ -825,7 +827,7 @@
               return a + c.charCodeAt(0)
             }, 0) % colors.length
           avatar.style.background = colors[idx]
-          var words = provider.name.split(' ')
+          var words = provider.name.trim().split(/\s+/).filter(Boolean)
           var firstInitial = words[0] ? words[0][0] : ''
           var lastInitial = words[words.length - 1] ? words[words.length - 1][0] : ''
           avatar.textContent = (words.length > 1 ? firstInitial + lastInitial : firstInitial).toUpperCase()
@@ -895,6 +897,10 @@
           })
         }
         results.appendChild(search)
+        var infoText = document.createElement('div')
+        infoText.style.cssText = 'font-size:12px;color:#64748b;padding:4px 0 8px;'
+        infoText.textContent = "If your provider isn't listed, they may not treat this condition."
+        results.appendChild(infoText)
         var helpLink = document.createElement('div')
         helpLink.className = 'pm-help'
         helpLink.textContent = 'Help me choose instead'
@@ -961,8 +967,21 @@
             })
           }
         } else {
-          remaining.forEach(function (item) {
-            results.appendChild(renderOptionDCard(item.provider))
+          ;(self.data.locations || []).forEach(function (location) {
+            var atLocation = remaining.filter(function (item) {
+              return (
+                item.offering.location_ids &&
+                item.offering.location_ids.indexOf(location.id) > -1
+              )
+            })
+            if (!atLocation.length) return
+            var sec = document.createElement('div')
+            sec.className = 'pm-section-title'
+            sec.textContent = location.name
+            results.appendChild(sec)
+            atLocation.forEach(function (item) {
+              results.appendChild(renderOptionDCard(item.provider))
+            })
           })
         }
       }
@@ -1052,7 +1071,7 @@
             return a + c.charCodeAt(0)
           }, 0) % colors.length
         avatar.style.background = colors[idx]
-        var words = provider.name.split(' ')
+        var words = provider.name.trim().split(/\s+/).filter(Boolean)
         var firstInitial = words[0] ? words[0][0] : ''
         var lastInitial = words[words.length - 1] ? words[words.length - 1][0] : ''
         avatar.textContent = (words.length > 1 ? firstInitial + lastInitial : firstInitial).toUpperCase()
