@@ -202,12 +202,12 @@
         '.pm-btn{background:' +
           primaryColor +
           ';color:white;border:none;border-radius:50px;padding:14px 24px;font-size:15px;font-weight:600;cursor:pointer;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,0.2);}',
-        '.pm-chat{width:380px;max-height:600px;background:white;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.15);display:flex;flex-direction:column;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;}',
+        '.pm-chat{width:380px;max-height:85vh;background:white;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.15);display:flex;flex-direction:column;overflow:visible;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;}',
         '.pm-header{background:' +
           primaryColor +
           ';color:white;padding:16px;display:flex;justify-content:space-between;align-items:center;font-weight:600;font-size:15px;}',
         '.pm-close{background:none;border:none;color:white;font-size:22px;cursor:pointer;line-height:1;padding:0;font-family:inherit;}',
-        '.pm-body{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px;}',
+        '.pm-body{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;display:flex;flex-direction:column;gap:10px;}',
         '.pm-bubble{background:#f1f5f9;border-radius:12px 12px 12px 4px;padding:12px 16px;font-size:14px;line-height:1.5;color:#1e293b;max-width:85%;}',
         '.pm-user-bubble{background:' +
           primaryColor +
@@ -221,13 +221,13 @@
           ';border-radius:10px;padding:11px 16px;font-size:14px;font-weight:500;cursor:pointer;text-align:left;font-family:inherit;}',
         '.pm-option:hover{background:' + primaryColor + ';color:white;}',
         '.pm-number-wrap{display:flex;gap:8px;}',
-        '.pm-number-input{flex:1;padding:10px 14px;border:2px solid #e2e8f0;border-radius:10px;font-size:14px;font-family:inherit;}',
+        '.pm-number-input{flex:1;padding:10px 14px;border:2px solid #e2e8f0;border-radius:10px;font-size:16px;font-family:inherit;}',
         '.pm-number-input:focus{outline:none;border-color:' + primaryColor + ';}',
         '.pm-next-btn{background:' +
           primaryColor +
           ';color:white;border:none;border-radius:10px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;}',
         '.pm-back-btn{background:none;border:none;color:#64748b;font-size:13px;cursor:pointer;padding:0;font-family:inherit;text-decoration:underline;align-self:flex-start;}',
-        '.pm-select{width:100%;padding:10px 14px;border:2px solid #e2e8f0;border-radius:10px;font-size:14px;font-family:inherit;background:white;}',
+        '.pm-select{width:100%;padding:10px 14px;border:2px solid #e2e8f0;border-radius:10px;font-size:16px;font-family:inherit;background:white;}',
         '.pm-select:focus{outline:none;border-color:' + primaryColor + ';}',
         '.pm-results{display:flex;flex-direction:column;gap:6px;}',
         '.pm-section-title{font-weight:700;font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;padding:10px 0 4px;}',
@@ -256,7 +256,7 @@
           ';border-radius:10px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;}',
         '.pm-disclaimer{font-size:11px;color:#94a3b8;text-align:center;padding:8px;border-top:1px solid #f1f5f9;margin-top:8px;}',
         '.pm-field-col{display:flex;flex-direction:column;gap:8px;}',
-        '@media(max-width:420px){.pm-chat{width:100vw;max-height:100vh;border-radius:0;}}',
+        '@media(max-width:480px){.pm-chat{width:100vw;height:100vh;max-height:100vh;border-radius:0;position:fixed;top:0;left:0;}}',
       ].join('')
       this.shadow.appendChild(style)
     },
@@ -292,6 +292,8 @@
         closeBtn.onclick = function () {
           chat.remove()
           self.resetState()
+          document.body.style.overflow = '';
+          self.shadow.host.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:2147483647;';
           self.createFloatingButton()
         }
         header.appendChild(closeBtn)
@@ -302,6 +304,18 @@
       chat.appendChild(header)
       chat.appendChild(body)
       this.shadow.appendChild(chat)
+      document.body.style.overflow = 'hidden';
+      var self = this;
+      var mq = window.matchMedia('(max-width:480px)');
+      function applyHostLayout() {
+        if (mq.matches) {
+          self.shadow.host.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:2147483647;';
+        } else {
+          self.shadow.host.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:2147483647;';
+        }
+      }
+      applyHostLayout();
+      mq.addEventListener('change', applyHostLayout);
     },
 
     resetState: function () {
@@ -494,7 +508,6 @@
           self.handleAnswer(q, null, 'No preference')
           return
         }
-        self.state.selectedLocationId = sel.value
         var loc = locs.find(function (l) {
           return l.id === sel.value
         })
@@ -671,6 +684,9 @@
         this.showZeroResults()
         return
       }
+      if (q.question_type === 'location') {
+        this.state.selectedLocationId = value
+      }
       this.state.history.push({
         questionIndex: this.state.currentQuestionIndex,
         offerings: this.state.activeOfferings.slice(),
@@ -730,6 +746,21 @@
         : null
       var body = this.shadow.getElementById('pm-body')
       if (body) body.innerHTML = ''
+      var seq = this.getQuestionSequence()
+      for (var i = 0; i < last.questionIndex; i++) {
+        var q = seq[i]
+        if (!q) continue
+        this.addBubble(q.question_text, false)
+        var ans = last.answers[q.id]
+        if (ans !== undefined && ans !== null) {
+          if (q.question_type === 'location') {
+            var loc = (this.data.locations || []).find(function(l) { return l.id === ans })
+            this.addBubble(loc ? loc.name : 'No preference', true)
+          } else {
+            this.addBubble(String(ans), true)
+          }
+        }
+      }
       this.renderQuestion()
     },
 
@@ -992,6 +1023,11 @@
         disc.textContent = config.disclaimer_text
         results.appendChild(disc)
       }
+      var restartBtn = document.createElement('button')
+      restartBtn.className = 'pm-restart'
+      restartBtn.textContent = 'Start Over'
+      restartBtn.onclick = function() { self.resetState(); self.startFlow(); }
+      results.appendChild(restartBtn)
       body.appendChild(results)
       this.trackSession(false)
     },
