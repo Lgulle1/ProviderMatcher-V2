@@ -56,10 +56,13 @@ export default function ProviderProfilePage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [categoryIds, setCategoryIds] = useState<string[]>([])
+  const [bookingMode, setBookingMode] = useState<'default' | 'simple' | 'advanced'>('default')
+  const [phoneMode, setPhoneMode] = useState<'default' | 'simple' | 'advanced'>('default')
   const [originalCategoryIds, setOriginalCategoryIds] = useState<string[]>([])
   const [isSaving, setIsSaving] = useState(false)
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false)
   const [bookingLinks, setBookingLinks] = useState<Record<string, string>>({})
+  const [phoneLinks, setPhoneLinks] = useState<Record<string, string>>({})
   const [modal, setModal] = useState<{
     type: 'add-offering' | 'edit-offering' | 'delete-offering' | null
     payload?: any
@@ -163,14 +166,19 @@ export default function ProviderProfilePage() {
     })
     setCategoryIds(provider.category_ids ?? [])
     setOriginalCategoryIds(provider.category_ids ?? [])
+    setBookingMode(provider.booking_mode ?? 'default')
+    setPhoneMode(provider.phone_mode ?? 'default')
   }, [provider, reset])
 
   useEffect(() => {
-    const next: Record<string, string> = {}
+    const nextBooking: Record<string, string> = {}
+    const nextPhone: Record<string, string> = {}
     providerLocations.forEach((entry) => {
-      next[entry.location_id] = entry.booking_link ?? ''
+      nextBooking[entry.location_id] = entry.booking_link ?? ''
+      nextPhone[entry.location_id] = entry.phone ?? ''
     })
-    setBookingLinks(next)
+    setBookingLinks(nextBooking)
+    setPhoneLinks(nextPhone)
   }, [providerLocations])
 
   useEffect(() => {
@@ -287,6 +295,8 @@ export default function ProviderProfilePage() {
       email: values.email.trim() || null,
       bio_link: values.bio_link.trim() || null,
       category_ids: categoryIds,
+      booking_mode: bookingMode,
+      phone_mode: phoneMode,
     })
 
     if (result.error) {
@@ -297,7 +307,8 @@ export default function ProviderProfilePage() {
 
     for (const locationId of offeringLocationIds) {
       const link = bookingLinks[locationId]?.trim() ?? ''
-      const saveResult = await upsertProviderLocation(id, locationId, link || null)
+      const phone = phoneLinks[locationId]?.trim() ?? ''
+      const saveResult = await upsertProviderLocation(id, locationId, link || null, phone || null)
       if (saveResult.error) {
         toast.error(saveResult.error)
         setIsSaving(false)
@@ -577,6 +588,40 @@ export default function ProviderProfilePage() {
       </div>
 
       <div className="mb-4 rounded-xl border border-slate-200 bg-white p-6">
+        <h2 className="mb-3 font-semibold text-slate-900">Booking Behavior</h2>
+        <ul className="mb-4 space-y-1 text-sm text-slate-500">
+          <li><span className="font-medium text-slate-700">Simple</span> — Provider uses the same booking link or phone number at every location</li>
+          <li><span className="font-medium text-slate-700">Advanced</span> — Provider has different booking links or phone numbers depending on location</li>
+        </ul>
+        <div className="flex gap-6">
+          <div className="flex-1">
+            <label className="mb-1 block text-xs font-medium uppercase tracking-wider text-slate-500">Booking Link Mode</label>
+            <select
+              value={bookingMode}
+              onChange={(e) => setBookingMode(e.target.value as 'default' | 'simple' | 'advanced')}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            >
+              <option value="default">Use org default</option>
+              <option value="simple">Simple — Same link for all locations</option>
+              <option value="advanced">Advanced — Different link per location</option>
+            </select>
+          </div>
+          <div className="flex-1">
+            <label className="mb-1 block text-xs font-medium uppercase tracking-wider text-slate-500">Phone Mode</label>
+            <select
+              value={phoneMode}
+              onChange={(e) => setPhoneMode(e.target.value as 'default' | 'simple' | 'advanced')}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            >
+              <option value="default">Use org default</option>
+              <option value="simple">Simple — Same number for all locations</option>
+              <option value="advanced">Advanced — Different number per location</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div className="mb-4 rounded-xl border border-slate-200 bg-white p-6">
         <h2 className="mb-4 font-semibold text-slate-900">Locations &amp; Booking Links</h2>
 
         {providerLocationsLoading || orgLocationsLoading || offeringsLoading ? (
@@ -592,8 +637,9 @@ export default function ProviderProfilePage() {
         ) : (
           <div className="w-full">
             <div className="flex items-center gap-4 border-b border-slate-200 pb-2 text-xs uppercase tracking-wider text-slate-500">
-              <div className="w-1/3">Location</div>
+              <div className="w-1/4">Location</div>
               <div className="flex-1">Booking Link</div>
+              <div className="flex-1">Phone</div>
             </div>
 
             {offeringLocationIds.map((locationId, index) => {
@@ -607,10 +653,9 @@ export default function ProviderProfilePage() {
                     index === offeringLocationIds.length - 1 ? '' : 'border-b border-slate-100',
                   ].join(' ')}
                 >
-                  <div className="w-1/3">
+                  <div className="w-1/4">
                     <span className="text-sm text-slate-700">{locationName}</span>
                   </div>
-
                   <div className="flex-1">
                     <input
                       type="text"
@@ -618,6 +663,18 @@ export default function ProviderProfilePage() {
                       onChange={(event) =>
                         setBookingLinks((prev) => ({ ...prev, [locationId]: event.target.value }))
                       }
+                      placeholder="https://..."
+                      className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <input
+                      type="text"
+                      value={phoneLinks[locationId] ?? ''}
+                      onChange={(event) =>
+                        setPhoneLinks((prev) => ({ ...prev, [locationId]: event.target.value }))
+                      }
+                      placeholder="(410) 555-0123"
                       className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
                     />
                   </div>

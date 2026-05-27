@@ -17,17 +17,18 @@ export async function getProviderLocations(providerId: string): Promise<Provider
 export async function upsertProviderLocation(
   providerId: string,
   locationId: string,
-  bookingLink: string | null
+  bookingLink: string | null,
+  phone: string | null
 ): Promise<{ error: string | null }> {
   const { error } = await supabase.from('provider_locations').upsert(
     {
       provider_id: providerId,
       location_id: locationId,
       booking_link: bookingLink,
+      phone: phone,
     },
     { onConflict: 'provider_id,location_id' }
   )
-
   return { error: error?.message ?? null }
 }
 

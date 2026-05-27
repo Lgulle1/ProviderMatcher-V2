@@ -10,6 +10,8 @@ type OrgFormValues = {
   fallback_phone: string
   fallback_message: string
   allowed_domains_text: string
+  default_booking_mode: 'simple' | 'advanced'
+  default_phone_mode: 'simple' | 'advanced'
 }
 
 export default function SettingsPage() {
@@ -52,6 +54,8 @@ export default function SettingsPage() {
       fallback_phone: org.fallback_phone ?? '',
       fallback_message: org.fallback_message,
       allowed_domains_text: (org.allowed_domains ?? []).join('\n'),
+      default_booking_mode: org.default_booking_mode ?? 'simple',
+      default_phone_mode: org.default_phone_mode ?? 'simple',
     })
   }, [org, reset])
 
@@ -107,6 +111,8 @@ export default function SettingsPage() {
         fallback_phone: values.fallback_phone.trim() || null,
         fallback_message: values.fallback_message,
         allowed_domains,
+        default_booking_mode: values.default_booking_mode,
+        default_phone_mode: values.default_phone_mode,
       })
       .eq('id', org.id)
       .select()
@@ -245,6 +251,35 @@ export default function SettingsPage() {
             <p className="mt-1 text-xs text-slate-500">
               One domain per line. Leave empty to allow all domains.
             </p>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">Default Booking Mode</label>
+            <ul className="mb-2 space-y-1 text-xs text-slate-500">
+              <li><span className="font-medium text-slate-600">Simple</span> — Provider uses the same booking link at every location</li>
+              <li><span className="font-medium text-slate-600">Advanced</span> — Provider has different booking links per location</li>
+            </ul>
+            <select
+              {...register('default_booking_mode')}
+              className="w-full max-w-md rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            >
+              <option value="simple">Simple — Same link for all locations</option>
+              <option value="advanced">Advanced — Different link per location</option>
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">Default Phone Mode</label>
+            <ul className="mb-2 space-y-1 text-xs text-slate-500">
+              <li><span className="font-medium text-slate-600">Simple</span> — Provider uses the same phone number at every location</li>
+              <li><span className="font-medium text-slate-600">Advanced</span> — Provider has different phone numbers per location</li>
+            </ul>
+            <select
+              {...register('default_phone_mode')}
+              className="w-full max-w-md rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            >
+              <option value="simple">Simple — Same number for all locations</option>
+              <option value="advanced">Advanced — Different number per location</option>
+            </select>
           </div>
 
           <button

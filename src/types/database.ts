@@ -5,6 +5,8 @@ export interface Organization {
   fallback_message: string
   allowed_domains: string[]
   onboarding_completed: boolean
+  default_booking_mode: 'simple' | 'advanced'
+  default_phone_mode: 'simple' | 'advanced'
   created_at: string
   updated_at: string
 }
@@ -62,6 +64,8 @@ export interface Provider {
   bio_link: string | null
   image_url: string | null
   category_ids: string[]
+  booking_mode: 'default' | 'simple' | 'advanced'
+  phone_mode: 'default' | 'simple' | 'advanced'
   is_archived: boolean
   created_at: string
   updated_at: string
@@ -72,6 +76,8 @@ export interface ProviderLocation {
   provider_id: string
   location_id: string
   booking_link: string | null
+  phone: string | null
+  bio_link: string | null
   created_at: string
   updated_at: string
 }
