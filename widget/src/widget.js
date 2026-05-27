@@ -232,15 +232,20 @@
         '.pm-results{display:flex;flex-direction:column;gap:6px;}',
         '.pm-section-title{font-weight:700;font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;padding:10px 0 4px;}',
         '.pm-cat-title{font-weight:600;font-size:14px;color:#1e293b;padding:4px 0 2px;}',
-        '.pm-card{display:flex;gap:12px;align-items:center;background:#f8fafc;border-radius:12px;padding:12px;}',
+        '.pm-card{display:flex;gap:12px;align-items:flex-start;background:#f8fafc;border-radius:12px;padding:12px;}',
         '.pm-avatar{width:48px;height:48px;border-radius:50%;object-fit:cover;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;color:white;}',
         '.pm-info{flex:1;min-width:0;}',
         '.pm-name{font-weight:600;font-size:14px;color:#1e293b;}',
         '.pm-sub{font-size:12px;color:#64748b;}',
-        '.pm-locs{font-size:11px;color:#94a3b8;margin-top:2px;}',
-        '.pm-book{background:' +
-          primaryColor +
-          ';color:white;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block;flex-shrink:0;font-family:inherit;}',
+        '.pm-locs{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}',
+        '.pm-book{background:' + primaryColor + ';color:white;border:none;border-radius:8px;padding:8px 10px;font-size:11px;font-weight:600;cursor:pointer;text-decoration:none;display:block;width:100%;box-sizing:border-box;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:inherit;}',
+        '.pm-loc-pill{background:#f1f5f9;color:#64748b;font-size:12px;padding:3px 10px;border-radius:999px;border:0.5px solid #e2e8f0;}',
+        '.pm-view-profile{font-size:11px;color:#64748b;text-decoration:none;margin-top:6px;display:inline-block;}',
+        '.pm-actions{display:flex;flex-direction:column;gap:6px;flex-shrink:0;width:160px;}',
+        '.pm-call{background:transparent;color:' + primaryColor + ';border:2px solid ' + primaryColor + ';border-radius:8px;padding:8px 10px;font-size:11px;font-weight:600;cursor:pointer;text-decoration:none;display:block;width:100%;box-sizing:border-box;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:inherit;}',
+        '.pm-slide-panel{display:flex;flex-direction:column;gap:6px;width:160px;}',
+        '.pm-slide-label{font-size:9px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.06em;text-align:center;margin-bottom:2px;}',
+        '.pm-back-link{background:transparent;color:#94a3b8;border:none;font-size:10px;cursor:pointer;padding:3px 0;text-align:center;width:100%;font-family:inherit;}',
         '.pm-search{width:100%;padding:10px 14px;border:2px solid #e2e8f0;border-radius:10px;font-size:14px;font-family:inherit;margin-bottom:8px;}',
         '.pm-search:focus{outline:none;border-color:' + primaryColor + ';}',
         '.pm-help{font-size:12px;color:' +
@@ -819,101 +824,19 @@
       unique = fisherYatesShuffle(unique)
       var results = document.createElement('div')
       results.className = 'pm-results'
-      var renderOptionDCard = function (provider) {
-        var card = document.createElement('div')
-        card.className = 'pm-card'
-        var avatar
-        if (provider.image_url) {
-          avatar = document.createElement('img')
-          avatar.src = provider.image_url
-          avatar.alt = provider.name
-          avatar.className = 'pm-avatar'
-        } else {
-          avatar = document.createElement('div')
-          avatar.className = 'pm-avatar'
-          var colors = [
-            '#6366f1',
-            '#8b5cf6',
-            '#a855f7',
-            '#3b82f6',
-            '#0ea5e9',
-            '#06b6d4',
-            '#10b981',
-            '#22c55e',
-            '#f59e0b',
-            '#f97316',
-            '#ef4444',
-            '#ec4899',
-            '#d946ef',
-            '#14b8a6',
-            '#84cc16',
-            '#e11d48',
-            '#7c3aed',
-            '#2563eb',
-            '#0891b2',
-            '#059669',
-          ]
-          var idx =
-            provider.name.split('').reduce(function (a, c) {
-              return a + c.charCodeAt(0)
-            }, 0) % colors.length
-          avatar.style.background = colors[idx]
-          var words = provider.name.trim().split(/\s+/).filter(Boolean)
-          var firstInitial = words[0] ? words[0][0] : ''
-          var lastInitial = words[words.length - 1] ? words[words.length - 1][0] : ''
-          avatar.textContent = (words.length > 1 ? firstInitial + lastInitial : firstInitial).toUpperCase()
-        }
-        card.appendChild(avatar)
-
-        var info = document.createElement('div')
-        info.className = 'pm-info'
-        var name = document.createElement('div')
-        name.className = 'pm-name'
-        name.textContent = provider.name
-        info.appendChild(name)
-
-        var pills = document.createElement('div')
-        ;(provider.category_ids || []).forEach(function (catId) {
-          var cat = (self.data.categories || []).find(function (c) {
-            return c.id === catId
-          })
-          if (!cat) return
-          var pill = document.createElement('span')
-          pill.setAttribute(
-            'style',
-            'display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;margin:2px 2px 0 0;background:#EFF6FF;color:#1D4ED8'
-          )
-          pill.textContent = cat.name
-          pills.appendChild(pill)
-        })
-        info.appendChild(pills)
-        card.appendChild(info)
-
-        var bookingLink = null
-        var provLocs = (self.data.providerLocations || []).filter(function (pl) {
-          return pl.provider_id === provider.id
-        })
-        if (self.state.selectedLocationId) {
-          var pl = provLocs.find(function (p) {
-            return p.location_id === self.state.selectedLocationId
-          })
-          if (pl) bookingLink = pl.booking_link
-        }
-        if (!bookingLink && provLocs.length) bookingLink = provLocs[0].booking_link
-        if (bookingLink) {
-          var book = document.createElement('a')
-          book.className = 'pm-book'
-          book.href = bookingLink
-          book.target = '_blank'
-          book.rel = 'noopener noreferrer'
-          book.textContent = 'Book Now'
-          book.onclick = function () {
-            self.trackClick(provider.id)
-          }
-          card.appendChild(book)
-        }
-
-        return card
+      var caseTypeName = ''
+      var selectedCaseType = (self.data.caseTypes || []).find(function (ct) { return ct.id === self.state.selectedCaseTypeId })
+      if (selectedCaseType) caseTypeName = selectedCaseType.name
+      var selectedLocName = ''
+      if (self.state.selectedLocationId) {
+        var selectedLocForHeader = (self.data.locations || []).find(function (l) { return l.id === self.state.selectedLocationId })
+        if (selectedLocForHeader) selectedLocName = selectedLocForHeader.name
+      }
+      if (caseTypeName) {
+        var header = document.createElement('div')
+        header.style.cssText = 'font-size:13px;color:#64748b;padding:4px 0 12px;'
+        header.textContent = 'Results for ' + caseTypeName + (selectedLocName ? ' at ' + selectedLocName : '')
+        results.appendChild(header)
       }
       if (this.state.bypassMode) {
         var search = document.createElement('input')
@@ -951,7 +874,7 @@
         }
         results.appendChild(helpLink)
         unique.forEach(function (item) {
-          results.appendChild(renderOptionDCard(item.provider))
+          results.appendChild(self.buildCard(item.provider))
         })
       } else {
         var remaining = unique.slice()
@@ -985,7 +908,7 @@
             results.appendChild(noMatch)
           } else {
             atLoc.forEach(function (item) {
-              results.appendChild(renderOptionDCard(item.provider))
+              results.appendChild(self.buildCard(item.provider))
             })
           }
           if (outsideLoc.length) {
@@ -994,7 +917,7 @@
             sec3.textContent = 'Providers outside ' + locName
             results.appendChild(sec3)
             outsideLoc.forEach(function (item) {
-              results.appendChild(renderOptionDCard(item.provider))
+              results.appendChild(self.buildCard(item.provider))
             })
           }
         } else {
@@ -1011,7 +934,7 @@
             sec.textContent = location.name
             results.appendChild(sec)
             atLocation.forEach(function (item) {
-              results.appendChild(renderOptionDCard(item.provider))
+              results.appendChild(self.buildCard(item.provider))
             })
           })
         }
@@ -1034,43 +957,39 @@
 
     renderGrouped: function (container, items) {
       var self = this
-      var groups = {}
+      var seen = {}
+      var unique = []
       items.forEach(function (item) {
-        var cats = item.provider.category_ids || []
-        if (!cats.length) {
-          if (!groups['Other']) groups['Other'] = []
-          groups['Other'].push(item.provider)
-        } else {
-          cats.forEach(function (catId) {
-            var cat = (self.data.categories || []).find(function (c) {
-              return c.id === catId
-            })
-            var name = cat ? cat.name : 'Other'
-            if (!groups[name]) groups[name] = []
-            if (!groups[name].some(function (p) {
-              return p.id === item.provider.id
-            }))
-              groups[name].push(item.provider)
-          })
+        if (!seen[item.provider.id]) {
+          seen[item.provider.id] = true
+          unique.push(item.provider)
         }
       })
-      Object.keys(groups)
-        .sort()
-        .forEach(function (catName) {
-          var h = document.createElement('div')
-          h.className = 'pm-cat-title'
-          h.textContent = catName
-          container.appendChild(h)
-          groups[catName].forEach(function (p) {
-            container.appendChild(self.buildCard(p))
-          })
-        })
+      unique.forEach(function (provider) {
+        container.appendChild(self.buildCard(provider))
+      })
     },
 
     buildCard: function (provider) {
       var self = this
+      var config = this.data.config || {}
+
+      // Determine effective booking mode and phone mode
+      var orgBookingMode = config.default_booking_mode || 'simple'
+      var orgPhoneMode = config.default_phone_mode || 'simple'
+      var bookingMode = provider.booking_mode === 'default' ? orgBookingMode : (provider.booking_mode || orgBookingMode)
+      var phoneMode = provider.phone_mode === 'default' ? orgPhoneMode : (provider.phone_mode || orgPhoneMode)
+
+      // Get provider locations
+      var provLocs = (this.data.providerLocations || []).filter(function (pl) {
+        return pl.provider_id === provider.id
+      })
+
+      // Build card
       var card = document.createElement('div')
       card.className = 'pm-card'
+
+      // Avatar
       var avatar
       if (provider.image_url) {
         avatar = document.createElement('img')
@@ -1080,92 +999,219 @@
       } else {
         avatar = document.createElement('div')
         avatar.className = 'pm-avatar'
-        var colors = [
-          '#6366f1',
-          '#8b5cf6',
-          '#a855f7',
-          '#3b82f6',
-          '#0ea5e9',
-          '#06b6d4',
-          '#10b981',
-          '#22c55e',
-          '#f59e0b',
-          '#f97316',
-          '#ef4444',
-          '#ec4899',
-          '#d946ef',
-          '#14b8a6',
-          '#84cc16',
-          '#e11d48',
-          '#7c3aed',
-          '#2563eb',
-          '#0891b2',
-          '#059669',
-        ]
-        var idx =
-          provider.name.split('').reduce(function (a, c) {
-            return a + c.charCodeAt(0)
-          }, 0) % colors.length
+        var colors = ['#6366f1','#8b5cf6','#a855f7','#3b82f6','#0ea5e9','#06b6d4','#10b981','#22c55e','#f59e0b','#f97316','#ef4444','#ec4899','#d946ef','#14b8a6','#84cc16','#e11d48','#7c3aed','#2563eb','#0891b2','#059669']
+        var idx = provider.name.split('').reduce(function (a, c) { return a + c.charCodeAt(0) }, 0) % colors.length
         avatar.style.background = colors[idx]
         var words = provider.name.trim().split(/\s+/).filter(Boolean)
-        var firstInitial = words[0] ? words[0][0] : ''
-        var lastInitial = words[words.length - 1] ? words[words.length - 1][0] : ''
-        avatar.textContent = (words.length > 1 ? firstInitial + lastInitial : firstInitial).toUpperCase()
+        avatar.textContent = (words.length > 1 ? words[0][0] + words[words.length - 1][0] : (words[0] ? words[0][0] : '')).toUpperCase()
       }
+
+      // Info section
       var info = document.createElement('div')
       info.className = 'pm-info'
+
       var name = document.createElement('div')
       name.className = 'pm-name'
       name.textContent = provider.name
       info.appendChild(name)
+
       if (provider.subtitle) {
         var sub = document.createElement('div')
         sub.className = 'pm-sub'
         sub.textContent = provider.subtitle
         info.appendChild(sub)
       }
-      var provLocs = (this.data.providerLocations || []).filter(function (pl) {
-        return pl.provider_id === provider.id
-      })
-      if (provLocs.length) {
-        var locNames = provLocs
-          .map(function (pl) {
-            var l = (self.data.locations || []).find(function (loc) {
-              return loc.id === pl.location_id
-            })
-            return l ? l.name : ''
-          })
-          .filter(Boolean)
-          .join(', ')
-        if (locNames) {
-          var locsEl = document.createElement('div')
-          locsEl.className = 'pm-locs'
-          locsEl.textContent = locNames
-          info.appendChild(locsEl)
+
+      // Category pills
+      var catPills = document.createElement('div')
+      catPills.className = 'pm-pills'
+      ;(provider.category_ids || []).forEach(function (catId) {
+        var cat = (self.data.categories || []).find(function (c) { return c.id === catId })
+        if (cat) {
+          var pill = document.createElement('span')
+          pill.className = 'pm-cat-pill'
+          pill.textContent = cat.name
+          catPills.appendChild(pill)
         }
+      })
+      if (catPills.children.length) info.appendChild(catPills)
+
+      // Location pills
+      if (provLocs.length) {
+        var locPills = document.createElement('div')
+        locPills.className = 'pm-locs'
+        provLocs.forEach(function (pl) {
+          var loc = (self.data.locations || []).find(function (l) { return l.id === pl.location_id })
+          if (loc) {
+            var pill = document.createElement('span')
+            pill.className = 'pm-loc-pill'
+            pill.textContent = '📍 ' + loc.name
+            locPills.appendChild(pill)
+          }
+        })
+        if (locPills.children.length) info.appendChild(locPills)
       }
+
+      // View Profile link
+      if (provider.bio_link) {
+        var profileLink = document.createElement('a')
+        profileLink.className = 'pm-view-profile'
+        profileLink.href = provider.bio_link
+        profileLink.target = '_blank'
+        profileLink.rel = 'noopener noreferrer'
+        profileLink.textContent = '👤 View Profile →'
+        info.appendChild(profileLink)
+      }
+
       card.appendChild(avatar)
       card.appendChild(info)
-      var bookingLink = null
+
+      // Actions panel
+      var actionsWrap = document.createElement('div')
+      actionsWrap.style.cssText = 'flex-shrink:0;width:160px;position:relative;'
+
+      // Default actions panel
+      var defaultPanel = document.createElement('div')
+      defaultPanel.className = 'pm-actions'
+
+      // --- BOOKING BUTTON ---
+      var bookingLocsWithLinks = provLocs.filter(function (pl) { return pl.booking_link })
+
       if (this.state.selectedLocationId) {
-        var pl = provLocs.find(function (p) {
-          return p.location_id === self.state.selectedLocationId
-        })
-        if (pl) bookingLink = pl.booking_link
-      }
-      if (!bookingLink && provLocs.length) bookingLink = provLocs[0].booking_link
-      if (bookingLink) {
-        var book = document.createElement('a')
-        book.className = 'pm-book'
-        book.href = bookingLink
-        book.target = '_blank'
-        book.rel = 'noopener noreferrer'
-        book.textContent = 'Book Now'
-        book.onclick = function () {
-          self.trackClick(provider.id)
+        // Patient selected a location — straight through
+        var selectedPl = provLocs.find(function (pl) { return pl.location_id === self.state.selectedLocationId })
+        var selectedLoc = (this.data.locations || []).find(function (l) { return l.id === self.state.selectedLocationId })
+        if (selectedPl && selectedPl.booking_link) {
+          var bookBtn = document.createElement('a')
+          bookBtn.className = 'pm-book'
+          bookBtn.href = selectedPl.booking_link
+          bookBtn.target = '_blank'
+          bookBtn.rel = 'noopener noreferrer'
+          bookBtn.textContent = 'Book at ' + (selectedLoc ? selectedLoc.name : 'Location')
+          bookBtn.onclick = function () { self.trackClick(provider.id) }
+          defaultPanel.appendChild(bookBtn)
         }
-        card.appendChild(book)
+      } else if (bookingLocsWithLinks.length === 1 || bookingMode === 'simple') {
+        // Simple mode or only one location — straight through
+        var firstPl = bookingLocsWithLinks[0]
+        if (firstPl) {
+          var firstLoc = (this.data.locations || []).find(function (l) { return l.id === firstPl.location_id })
+          var bookBtn2 = document.createElement('a')
+          bookBtn2.className = 'pm-book'
+          bookBtn2.href = firstPl.booking_link
+          bookBtn2.target = '_blank'
+          bookBtn2.rel = 'noopener noreferrer'
+          bookBtn2.textContent = bookingLocsWithLinks.length === 1 ? 'Book at ' + (firstLoc ? firstLoc.name : 'Location') : 'Book Now'
+          bookBtn2.onclick = function () { self.trackClick(provider.id) }
+          defaultPanel.appendChild(bookBtn2)
+        }
+      } else if (bookingLocsWithLinks.length > 1) {
+        // Advanced mode — slide
+        var bookTrigger = document.createElement('button')
+        bookTrigger.className = 'pm-book'
+        bookTrigger.textContent = 'Book Now'
+        bookTrigger.onclick = function () {
+          defaultPanel.style.display = 'none'
+          bookSlide.style.display = 'flex'
+        }
+        defaultPanel.appendChild(bookTrigger)
       }
+
+      // --- PHONE BUTTON ---
+      var phoneLocsWithNumbers = provLocs.filter(function (pl) { return pl.phone })
+
+      if (phoneLocsWithNumbers.length > 0) {
+        if (this.state.selectedLocationId) {
+          var selPhonePl = provLocs.find(function (pl) { return pl.location_id === self.state.selectedLocationId })
+          var selPhoneLoc = (this.data.locations || []).find(function (l) { return l.id === self.state.selectedLocationId })
+          if (selPhonePl && selPhonePl.phone) {
+            var callBtn = document.createElement('a')
+            callBtn.className = 'pm-call'
+            callBtn.href = 'tel:' + selPhonePl.phone
+            callBtn.textContent = 'Call ' + (selPhoneLoc ? selPhoneLoc.name : 'Office')
+            defaultPanel.appendChild(callBtn)
+          }
+        } else if (phoneLocsWithNumbers.length === 1 || phoneMode === 'simple') {
+          var firstPhonePl = phoneLocsWithNumbers[0]
+          var firstPhoneLoc = (this.data.locations || []).find(function (l) { return l.id === firstPhonePl.location_id })
+          var callBtn2 = document.createElement('a')
+          callBtn2.className = 'pm-call'
+          callBtn2.href = 'tel:' + firstPhonePl.phone
+          callBtn2.textContent = phoneLocsWithNumbers.length === 1 ? 'Call ' + (firstPhoneLoc ? firstPhoneLoc.name : 'Office') : 'Call Office'
+          defaultPanel.appendChild(callBtn2)
+        } else {
+          var callTrigger = document.createElement('button')
+          callTrigger.className = 'pm-call'
+          callTrigger.textContent = 'Call Office'
+          callTrigger.onclick = function () {
+            defaultPanel.style.display = 'none'
+            callSlide.style.display = 'flex'
+          }
+          defaultPanel.appendChild(callTrigger)
+        }
+      }
+
+      actionsWrap.appendChild(defaultPanel)
+
+      // --- BOOKING SLIDE PANEL ---
+      var bookSlide = document.createElement('div')
+      bookSlide.className = 'pm-slide-panel'
+      bookSlide.style.display = 'none'
+      var bookLabel = document.createElement('div')
+      bookLabel.className = 'pm-slide-label'
+      bookLabel.textContent = 'Book at...'
+      bookSlide.appendChild(bookLabel)
+      bookingLocsWithLinks.forEach(function (pl) {
+        var loc = (self.data.locations || []).find(function (l) { return l.id === pl.location_id })
+        var btn = document.createElement('a')
+        btn.className = 'pm-book'
+        btn.href = pl.booking_link
+        btn.target = '_blank'
+        btn.rel = 'noopener noreferrer'
+        btn.textContent = loc ? loc.name : 'Location'
+        btn.onclick = function () { self.trackClick(provider.id) }
+        bookSlide.appendChild(btn)
+      })
+      var bookBack = document.createElement('button')
+      bookBack.className = 'pm-back-link'
+      bookBack.textContent = '← back'
+      bookBack.onclick = function () {
+        bookSlide.style.display = 'none'
+        defaultPanel.style.display = 'flex'
+      }
+      bookSlide.appendChild(bookBack)
+      actionsWrap.appendChild(bookSlide)
+
+      // --- PHONE SLIDE PANEL ---
+      var callSlide = document.createElement('div')
+      callSlide.className = 'pm-slide-panel'
+      callSlide.style.display = 'none'
+      var callLabel = document.createElement('div')
+      callLabel.className = 'pm-slide-label'
+      callLabel.textContent = 'Call...'
+      callSlide.appendChild(callLabel)
+      phoneLocsWithNumbers.forEach(function (pl) {
+        var loc = (self.data.locations || []).find(function (l) { return l.id === pl.location_id })
+        var btn = document.createElement('a')
+        btn.className = 'pm-call'
+        btn.href = 'tel:' + pl.phone
+        btn.textContent = loc ? loc.name : 'Office'
+        callSlide.appendChild(btn)
+      })
+      var callBack = document.createElement('button')
+      callBack.className = 'pm-back-link'
+      callBack.textContent = '← back'
+      callBack.onclick = function () {
+        callSlide.style.display = 'none'
+        defaultPanel.style.display = 'flex'
+      }
+      callSlide.appendChild(callBack)
+      actionsWrap.appendChild(callSlide)
+
+      if (defaultPanel.children.length || bookingLocsWithLinks.length > 1 || phoneLocsWithNumbers.length > 1) {
+        card.appendChild(actionsWrap)
+      }
+
       return card
     },
 

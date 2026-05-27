@@ -125,6 +125,8 @@ serve(async (req) => {
           allowed_domains: org?.allowed_domains || [],
           embed_mode: widget.embed_mode,
           show_worth_the_drive: widget.show_worth_the_drive,
+          default_booking_mode: org?.default_booking_mode || 'simple',
+          default_phone_mode: org?.default_phone_mode || 'simple',
         },
         providers,
         offerings,
