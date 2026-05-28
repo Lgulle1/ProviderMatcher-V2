@@ -13,6 +13,7 @@ export interface ImportColumnMapping {
   locationId?: string
   constraintId?: string
   rangePosition?: 'min' | 'max'
+  locationScope?: string | 'all'
 }
 
 export interface ConflictItem {
@@ -221,6 +222,8 @@ export async function executeImportRun(params: ExecuteImportParams): Promise<Exe
 
   const constraintMappings = mappings.filter((m) => m.role === 'constraint' && m.constraintId)
   const locationMappings = mappings.filter((m) => m.role === 'location' && m.locationId)
+  const bookingLinkMappings = mappings.filter((m) => m.role === 'booking_link' && m.locationScope)
+  const phoneMappings = mappings.filter((m) => m.role === 'phone' && m.locationScope)
 
   const constraintById = new Map(orgConstraints.map((c) => [c.id, c]))
   const importedProviderNameToId: Record<string, string> = {}
@@ -314,6 +317,24 @@ export async function executeImportRun(params: ExecuteImportParams): Promise<Exe
       if (lm.locationId && isTruthyBinary(cell)) {
         locationIds.push(lm.locationId)
       }
+    }
+
+    for (const locationId of locationIds) {
+      const blMapping = bookingLinkMappings.find(
+        (m) => m.locationScope === locationId || m.locationScope === 'all'
+      )
+      const phoneMapping = phoneMappings.find(
+        (m) => m.locationScope === locationId || m.locationScope === 'all'
+      )
+      const bookingLink = blMapping ? (row[blMapping.excelHeader] ?? '').trim() || null : null
+      const phone = phoneMapping ? (row[phoneMapping.excelHeader] ?? '').trim() || null : null
+
+      await supabase
+        .from('provider_locations')
+        .upsert(
+          { provider_id: providerId, location_id: locationId, booking_link: bookingLink, phone },
+          { onConflict: 'provider_id,location_id' }
+        )
     }
 
     const categoryIdsFromRow: string[] = []

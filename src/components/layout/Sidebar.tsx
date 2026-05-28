@@ -1,4 +1,5 @@
 import {
+  BarChart2,
   Globe,
   LayoutDashboard,
   LogOut,
@@ -47,6 +48,10 @@ export default function Sidebar() {
         <NavLink to="/dashboard" className={navLinkClassName} end>
           <LayoutDashboard className="h-4 w-4 shrink-0" aria-hidden />
           Dashboard
+        </NavLink>
+        <NavLink to="/analytics" className={navLinkClassName}>
+          <BarChart2 className="h-4 w-4 shrink-0" aria-hidden />
+          Analytics
         </NavLink>
         <NavLink to="/providers" className={navLinkClassName}>
           <Users className="h-4 w-4 shrink-0" aria-hidden />

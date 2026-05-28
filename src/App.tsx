@@ -7,6 +7,7 @@ import { ToastContainer } from './components/ui/Toast'
 import LoginPage from './pages/auth/LoginPage'
 import OnboardingPage from './pages/onboarding/OnboardingPage'
 import DashboardPage from './pages/dashboard/DashboardPage'
+import AnalyticsPage from './pages/AnalyticsPage'
 import ProvidersPage from './pages/providers/ProvidersPage'
 import ProviderProfilePage from './pages/providers/ProviderProfilePage'
 import DataTablePage from './pages/data-table/DataTablePage'
@@ -33,6 +34,16 @@ export default function App() {
               <ProtectedRoute>
                 <AppLayout title="Dashboard">
                   <DashboardPage />
+                </AppLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/analytics"
+            element={
+              <ProtectedRoute>
+                <AppLayout title="Analytics">
+                  <AnalyticsPage />
                 </AppLayout>
               </ProtectedRoute>
             }

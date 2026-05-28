@@ -19,6 +19,8 @@ export type ColumnRole =
   | 'category'
   | 'location'
   | 'constraint'
+  | 'booking_link'
+  | 'phone'
   | 'ignore'
 
 export interface ColumnMapping {
@@ -27,6 +29,7 @@ export interface ColumnMapping {
   locationId?: string
   constraintId?: string
   rangePosition?: 'min' | 'max'
+  locationScope?: string | 'all'
 }
 
 interface ImportWizardProps {
@@ -63,6 +66,8 @@ const MAP_ROLE_OPTIONS: { value: ColumnRole; label: string }[] = [
   { value: 'category', label: 'Category' },
   { value: 'location', label: 'Location' },
   { value: 'constraint', label: 'Constraint' },
+  { value: 'booking_link', label: 'Booking Link' },
+  { value: 'phone', label: 'Phone Number' },
   { value: 'ignore', label: 'Ignore this column' },
 ]
 
@@ -215,6 +220,9 @@ export default function ImportWizard({ isOpen, onClose, onComplete, orgId }: Imp
         if (patch.role !== undefined && patch.role !== 'constraint') {
           delete next.constraintId
           delete next.rangePosition
+        }
+        if (patch.role && patch.role !== 'booking_link' && patch.role !== 'phone') {
+          delete next.locationScope
         }
         if (patch.constraintId !== undefined) {
           const c = orgConstraints.find((x) => x.id === patch.constraintId)
@@ -1135,7 +1143,26 @@ export default function ImportWizard({ isOpen, onClose, onComplete, orgId }: Imp
                               </div>
                             ) : null}
 
-                            {mapping.role !== 'location' && mapping.role !== 'constraint' ? (
+                            {mapping.role === 'booking_link' || mapping.role === 'phone' ? (
+                              <select
+                                value={mapping.locationScope ?? ''}
+                                onChange={(e) => updateMapping(index, { locationScope: e.target.value })}
+                                className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                              >
+                                <option value="">— Select location —</option>
+                                <option value="all">All locations</option>
+                                {orgLocations.map((loc) => (
+                                  <option key={loc.id} value={loc.id}>
+                                    {loc.name}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : null}
+
+                            {mapping.role !== 'location' &&
+                            mapping.role !== 'constraint' &&
+                            mapping.role !== 'booking_link' &&
+                            mapping.role !== 'phone' ? (
                               <span className="text-sm text-slate-400">—</span>
                             ) : null}
                           </td>
