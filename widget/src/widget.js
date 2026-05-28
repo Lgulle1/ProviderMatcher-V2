@@ -202,7 +202,7 @@
         '.pm-btn{background:' +
           primaryColor +
           ';color:white;border:none;border-radius:50px;padding:14px 24px;font-size:15px;font-weight:600;cursor:pointer;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,0.2);}',
-        '.pm-chat{width:380px;max-height:85vh;background:white;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.15);display:flex;flex-direction:column;overflow:visible;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;}',
+        '.pm-chat{width:380px;max-height:85vh;background:white;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.15);display:flex;flex-direction:column;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;}',
         '.pm-header{background:' +
           primaryColor +
           ';color:white;padding:16px;display:flex;justify-content:space-between;align-items:center;font-weight:600;font-size:15px;}',
@@ -232,17 +232,19 @@
         '.pm-results{display:flex;flex-direction:column;gap:6px;}',
         '.pm-section-title{font-weight:700;font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;padding:10px 0 4px;}',
         '.pm-cat-title{font-weight:600;font-size:14px;color:#1e293b;padding:4px 0 2px;}',
-        '.pm-card{display:flex;gap:12px;align-items:flex-start;background:#f8fafc;border-radius:12px;padding:12px;}',
+        '.pm-card{display:flex;flex-direction:column;background:#f8fafc;border-radius:12px;padding:12px;gap:0;}',
         '.pm-avatar{width:48px;height:48px;border-radius:50%;object-fit:cover;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;color:white;}',
         '.pm-info{flex:1;min-width:0;}',
         '.pm-name{font-weight:600;font-size:14px;color:#1e293b;}',
         '.pm-sub{font-size:12px;color:#64748b;}',
         '.pm-locs{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}',
-        '.pm-book{background:' + primaryColor + ';color:white;border:none;border-radius:8px;padding:8px 10px;font-size:11px;font-weight:600;cursor:pointer;text-decoration:none;display:block;width:100%;box-sizing:border-box;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:inherit;}',
-        '.pm-loc-pill{background:#f1f5f9;color:#64748b;font-size:12px;padding:3px 10px;border-radius:999px;border:0.5px solid #e2e8f0;}',
+        '.pm-book{background:' + primaryColor + ';color:white;border:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:600;cursor:pointer;text-decoration:none;display:block;width:100%;box-sizing:border-box;text-align:center;font-family:inherit;}',
+        '.pm-pills{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;}',
+        '.pm-cat-pill{background:#eff6ff;color:#1d4ed8;font-size:11px;padding:3px 10px;border-radius:999px;}',
+        '.pm-loc-pill{background:#f1f5f9;color:#64748b;font-size:11px;padding:2px 8px;border-radius:999px;border:0.5px solid #e2e8f0;white-space:nowrap;}',
         '.pm-view-profile{font-size:11px;color:#64748b;text-decoration:none;margin-top:6px;display:inline-block;}',
         '.pm-actions{display:flex;flex-direction:column;gap:6px;flex-shrink:0;width:160px;}',
-        '.pm-call{background:transparent;color:' + primaryColor + ';border:2px solid ' + primaryColor + ';border-radius:8px;padding:8px 10px;font-size:11px;font-weight:600;cursor:pointer;text-decoration:none;display:block;width:100%;box-sizing:border-box;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:inherit;}',
+        '.pm-call{background:transparent;color:' + primaryColor + ';border:2px solid ' + primaryColor + ';border-radius:8px;padding:8px 12px;font-size:12px;font-weight:600;cursor:pointer;text-decoration:none;display:block;width:100%;box-sizing:border-box;text-align:center;font-family:inherit;}',
         '.pm-slide-panel{display:flex;flex-direction:column;gap:6px;width:160px;}',
         '.pm-slide-label{font-size:9px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.06em;text-align:center;margin-bottom:2px;}',
         '.pm-back-link{background:transparent;color:#94a3b8;border:none;font-size:10px;cursor:pointer;padding:3px 0;text-align:center;width:100%;font-family:inherit;}',
@@ -834,7 +836,7 @@
       }
       if (caseTypeName) {
         var header = document.createElement('div')
-        header.style.cssText = 'font-size:13px;color:#64748b;padding:4px 0 12px;'
+        header.style.cssText = 'font-size:15px;font-weight:600;color:#1e293b;padding:4px 0 12px;'
         header.textContent = 'Results for ' + caseTypeName + (selectedLocName ? ' at ' + selectedLocName : '')
         results.appendChild(header)
       }
@@ -921,21 +923,8 @@
             })
           }
         } else {
-          ;(self.data.locations || []).forEach(function (location) {
-            var atLocation = remaining.filter(function (item) {
-              return (
-                item.offering.location_ids &&
-                item.offering.location_ids.indexOf(location.id) > -1
-              )
-            })
-            if (!atLocation.length) return
-            var sec = document.createElement('div')
-            sec.className = 'pm-section-title'
-            sec.textContent = location.name
-            results.appendChild(sec)
-            atLocation.forEach(function (item) {
-              results.appendChild(self.buildCard(item.provider))
-            })
+          remaining.forEach(function (item) {
+            results.appendChild(self.buildCard(item.provider))
           })
         }
       }
@@ -1036,12 +1025,22 @@
       })
       if (catPills.children.length) info.appendChild(catPills)
 
-      // Location pills
-      if (provLocs.length) {
+      // Location pills — from offerings
+      var providerOfferingLocationIds = []
+      ;(self.data.offerings || []).forEach(function (o) {
+        if (o.provider_id === provider.id) {
+          ;(o.location_ids || []).forEach(function (lid) {
+            if (providerOfferingLocationIds.indexOf(lid) === -1) {
+              providerOfferingLocationIds.push(lid)
+            }
+          })
+        }
+      })
+      if (providerOfferingLocationIds.length) {
         var locPills = document.createElement('div')
         locPills.className = 'pm-locs'
-        provLocs.forEach(function (pl) {
-          var loc = (self.data.locations || []).find(function (l) { return l.id === pl.location_id })
+        providerOfferingLocationIds.forEach(function (lid) {
+          var loc = (self.data.locations || []).find(function (l) { return l.id === lid })
           if (loc) {
             var pill = document.createElement('span')
             pill.className = 'pm-loc-pill'
@@ -1063,22 +1062,23 @@
         info.appendChild(profileLink)
       }
 
-      card.appendChild(avatar)
-      card.appendChild(info)
+      var cardTop = document.createElement('div')
+      cardTop.style.cssText = 'display:flex;gap:12px;align-items:flex-start;'
+      cardTop.appendChild(avatar)
+      cardTop.appendChild(info)
+      card.appendChild(cardTop)
 
-      // Actions panel
-      var actionsWrap = document.createElement('div')
-      actionsWrap.style.cssText = 'flex-shrink:0;width:160px;position:relative;'
+      // Actions — full width below info
+      var actionsArea = document.createElement('div')
+      actionsArea.style.cssText = 'margin-top:10px;border-top:0.5px solid #e2e8f0;padding-top:10px;'
 
-      // Default actions panel
       var defaultPanel = document.createElement('div')
-      defaultPanel.className = 'pm-actions'
+      defaultPanel.style.cssText = 'display:flex;flex-direction:column;gap:6px;'
 
       // --- BOOKING BUTTON ---
       var bookingLocsWithLinks = provLocs.filter(function (pl) { return pl.booking_link })
 
       if (this.state.selectedLocationId) {
-        // Patient selected a location — straight through
         var selectedPl = provLocs.find(function (pl) { return pl.location_id === self.state.selectedLocationId })
         var selectedLoc = (this.data.locations || []).find(function (l) { return l.id === self.state.selectedLocationId })
         if (selectedPl && selectedPl.booking_link) {
@@ -1090,9 +1090,30 @@
           bookBtn.textContent = 'Book at ' + (selectedLoc ? selectedLoc.name : 'Location')
           bookBtn.onclick = function () { self.trackClick(provider.id) }
           defaultPanel.appendChild(bookBtn)
+        } else if (bookingLocsWithLinks.length && (bookingLocsWithLinks.length === 1 || bookingMode === 'simple')) {
+          var firstPlFallback = bookingLocsWithLinks[0]
+          if (firstPlFallback) {
+            var firstLocFallback = (this.data.locations || []).find(function (l) { return l.id === firstPlFallback.location_id })
+            var bookBtnFallback = document.createElement('a')
+            bookBtnFallback.className = 'pm-book'
+            bookBtnFallback.href = firstPlFallback.booking_link
+            bookBtnFallback.target = '_blank'
+            bookBtnFallback.rel = 'noopener noreferrer'
+            bookBtnFallback.textContent = bookingLocsWithLinks.length === 1 ? 'Book at ' + (firstLocFallback ? firstLocFallback.name : 'Location') : 'Book Now'
+            bookBtnFallback.onclick = function () { self.trackClick(provider.id) }
+            defaultPanel.appendChild(bookBtnFallback)
+          }
+        } else if (bookingLocsWithLinks.length > 1) {
+          var bookTriggerFallback = document.createElement('button')
+          bookTriggerFallback.className = 'pm-book'
+          bookTriggerFallback.textContent = 'Book Now'
+          bookTriggerFallback.onclick = function () {
+            defaultPanel.style.display = 'none'
+            bookSlide.style.display = 'flex'
+          }
+          defaultPanel.appendChild(bookTriggerFallback)
         }
-      } else if (bookingLocsWithLinks.length === 1 || bookingMode === 'simple') {
-        // Simple mode or only one location — straight through
+      } else if (bookingLocsWithLinks.length && (bookingLocsWithLinks.length === 1 || bookingMode === 'simple')) {
         var firstPl = bookingLocsWithLinks[0]
         if (firstPl) {
           var firstLoc = (this.data.locations || []).find(function (l) { return l.id === firstPl.location_id })
@@ -1106,7 +1127,6 @@
           defaultPanel.appendChild(bookBtn2)
         }
       } else if (bookingLocsWithLinks.length > 1) {
-        // Advanced mode — slide
         var bookTrigger = document.createElement('button')
         bookTrigger.className = 'pm-book'
         bookTrigger.textContent = 'Book Now'
@@ -1128,21 +1148,38 @@
             var callBtn = document.createElement('a')
             callBtn.className = 'pm-call'
             callBtn.href = 'tel:' + selPhonePl.phone
-            callBtn.textContent = 'Call ' + (selPhoneLoc ? selPhoneLoc.name : 'Office')
+            callBtn.textContent = '📞 Call ' + (selPhoneLoc ? selPhoneLoc.name : 'Office')
             defaultPanel.appendChild(callBtn)
+          } else if (phoneLocsWithNumbers.length && (phoneLocsWithNumbers.length === 1 || phoneMode === 'simple')) {
+            var firstPhoneFallback = phoneLocsWithNumbers[0]
+            var firstPhoneLocFallback = (this.data.locations || []).find(function (l) { return l.id === firstPhoneFallback.location_id })
+            var callBtnFallback = document.createElement('a')
+            callBtnFallback.className = 'pm-call'
+            callBtnFallback.href = 'tel:' + firstPhoneFallback.phone
+            callBtnFallback.textContent = '📞 Call ' + (phoneLocsWithNumbers.length === 1 ? (firstPhoneLocFallback ? firstPhoneLocFallback.name : 'Office') : 'Office')
+            defaultPanel.appendChild(callBtnFallback)
+          } else if (phoneLocsWithNumbers.length > 1) {
+            var callTriggerFallback = document.createElement('button')
+            callTriggerFallback.className = 'pm-call'
+            callTriggerFallback.textContent = '📞 Call Office'
+            callTriggerFallback.onclick = function () {
+              defaultPanel.style.display = 'none'
+              callSlide.style.display = 'flex'
+            }
+            defaultPanel.appendChild(callTriggerFallback)
           }
-        } else if (phoneLocsWithNumbers.length === 1 || phoneMode === 'simple') {
+        } else if (phoneLocsWithNumbers.length && (phoneLocsWithNumbers.length === 1 || phoneMode === 'simple')) {
           var firstPhonePl = phoneLocsWithNumbers[0]
           var firstPhoneLoc = (this.data.locations || []).find(function (l) { return l.id === firstPhonePl.location_id })
           var callBtn2 = document.createElement('a')
           callBtn2.className = 'pm-call'
           callBtn2.href = 'tel:' + firstPhonePl.phone
-          callBtn2.textContent = phoneLocsWithNumbers.length === 1 ? 'Call ' + (firstPhoneLoc ? firstPhoneLoc.name : 'Office') : 'Call Office'
+          callBtn2.textContent = '📞 Call ' + (phoneLocsWithNumbers.length === 1 ? (firstPhoneLoc ? firstPhoneLoc.name : 'Office') : 'Office')
           defaultPanel.appendChild(callBtn2)
         } else {
           var callTrigger = document.createElement('button')
           callTrigger.className = 'pm-call'
-          callTrigger.textContent = 'Call Office'
+          callTrigger.textContent = '📞 Call Office'
           callTrigger.onclick = function () {
             defaultPanel.style.display = 'none'
             callSlide.style.display = 'flex'
@@ -1151,14 +1188,13 @@
         }
       }
 
-      actionsWrap.appendChild(defaultPanel)
+      actionsArea.appendChild(defaultPanel)
 
-      // --- BOOKING SLIDE PANEL ---
+      // --- BOOKING SLIDE ---
       var bookSlide = document.createElement('div')
-      bookSlide.className = 'pm-slide-panel'
-      bookSlide.style.display = 'none'
+      bookSlide.style.cssText = 'display:none;flex-direction:column;gap:6px;'
       var bookLabel = document.createElement('div')
-      bookLabel.className = 'pm-slide-label'
+      bookLabel.style.cssText = 'font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.06em;text-align:center;'
       bookLabel.textContent = 'Book at...'
       bookSlide.appendChild(bookLabel)
       bookingLocsWithLinks.forEach(function (pl) {
@@ -1180,22 +1216,21 @@
         defaultPanel.style.display = 'flex'
       }
       bookSlide.appendChild(bookBack)
-      actionsWrap.appendChild(bookSlide)
+      actionsArea.appendChild(bookSlide)
 
-      // --- PHONE SLIDE PANEL ---
+      // --- CALL SLIDE ---
       var callSlide = document.createElement('div')
-      callSlide.className = 'pm-slide-panel'
-      callSlide.style.display = 'none'
+      callSlide.style.cssText = 'display:none;flex-direction:column;gap:6px;'
       var callLabel = document.createElement('div')
-      callLabel.className = 'pm-slide-label'
+      callLabel.style.cssText = 'font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.06em;text-align:center;'
       callLabel.textContent = 'Call...'
       callSlide.appendChild(callLabel)
       phoneLocsWithNumbers.forEach(function (pl) {
         var loc = (self.data.locations || []).find(function (l) { return l.id === pl.location_id })
-        var btn = document.createElement('a')
+        var btn = document.createElement('button')
         btn.className = 'pm-call'
-        btn.href = 'tel:' + pl.phone
-        btn.textContent = loc ? loc.name : 'Office'
+        btn.textContent = '📞 ' + (loc ? loc.name : 'Office')
+        btn.onclick = function () { window.location.href = 'tel:' + pl.phone }
         callSlide.appendChild(btn)
       })
       var callBack = document.createElement('button')
@@ -1206,10 +1241,10 @@
         defaultPanel.style.display = 'flex'
       }
       callSlide.appendChild(callBack)
-      actionsWrap.appendChild(callSlide)
+      actionsArea.appendChild(callSlide)
 
-      if (defaultPanel.children.length || bookingLocsWithLinks.length > 1 || phoneLocsWithNumbers.length > 1) {
-        card.appendChild(actionsWrap)
+      if (defaultPanel.children.length > 0 || bookingLocsWithLinks.length > 1 || phoneLocsWithNumbers.length > 1) {
+        card.appendChild(actionsArea)
       }
 
       return card
