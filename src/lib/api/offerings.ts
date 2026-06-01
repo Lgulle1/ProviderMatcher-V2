@@ -50,6 +50,53 @@ export async function updateOffering(
 }
 
 export async function archiveOffering(id: string): Promise<{ error: string | null }> {
-  const { error } = await supabase.from('offerings').update({ is_archived: true }).eq('id', id)
-  return { error: error?.message ?? null }
+  const { data: offering, error: fetchError } = await supabase
+    .from('offerings')
+    .select('provider_id, location_ids')
+    .eq('id', id)
+    .single()
+
+  if (fetchError || !offering) {
+    return { error: fetchError?.message ?? 'Offering not found' }
+  }
+
+  const { error: archiveError } = await supabase
+    .from('offerings')
+    .update({ is_archived: true })
+    .eq('id', id)
+
+  if (archiveError) {
+    return { error: archiveError.message }
+  }
+
+  const providerId = offering.provider_id as string
+  const locationIds = (offering.location_ids as string[]) ?? []
+
+  for (const locationId of locationIds) {
+    const { data: activeOfferings, error: checkError } = await supabase
+      .from('offerings')
+      .select('id')
+      .eq('provider_id', providerId)
+      .eq('is_archived', false)
+      .contains('location_ids', [locationId])
+      .limit(1)
+
+    if (checkError) {
+      return { error: checkError.message }
+    }
+
+    if (!activeOfferings?.length) {
+      const { error: deleteError } = await supabase
+        .from('provider_locations')
+        .delete()
+        .eq('provider_id', providerId)
+        .eq('location_id', locationId)
+
+      if (deleteError) {
+        return { error: deleteError.message }
+      }
+    }
+  }
+
+  return { error: null }
 }
