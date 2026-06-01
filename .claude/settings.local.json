@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\lgulley\\\\Desktop\\\\ProviderMatcher V2\" -Recurse -Directory | Select-Object -First 30 | ForEach-Object { $_.FullName })",
-      "Bash(grep -r \"^[[:space:]]*//\" \"C:\\\\Users\\\\lgulley\\\\Desktop\\\\ProviderMatcher V2\\\\src\" --include=\"*.ts\" --include=\"*.tsx\")"
-    ]
-  }
-}
