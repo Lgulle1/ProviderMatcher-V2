@@ -4,10 +4,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - 'widget/src/**'
-      - 'widget/build.js'
-      - 'widget/package.json'
 
 jobs:
   build-and-deploy:
