@@ -350,7 +350,7 @@ export default function WidgetBuilderPage() {
   const allRequirementsMet = reqProvidersOk && reqCaseTypesOk && reqEntryOk
 
   const embedScript = id
-    ? `<script src="https://providermatcher.netlify.app/widget.js" data-widget-id="${id}"></script>`
+    ? `<script src="https://lgulle1.github.io/ProviderMatcher-V2/widget.js" data-widget-id="${id}"></script>`
     : ''
 
   async function copyEmbedCode() {

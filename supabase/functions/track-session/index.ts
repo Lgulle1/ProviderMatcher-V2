@@ -3,7 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': 'Content-Type, apikey, Authorization',
 }
 
 serve(async (req) => {
@@ -37,10 +37,15 @@ serve(async (req) => {
     }
 
     if (body.type === 'event') {
+      let orgId = body.org_id ?? null
+      if (!orgId && body.widget_id) {
+        const { data: w } = await supabase.from('widgets').select('org_id').eq('id', body.widget_id).maybeSingle()
+        orgId = w?.org_id ?? null
+      }
       const { error } = await supabase.from('widget_session_events').insert({
         session_id: body.session_id,
         widget_id: body.widget_id,
-        org_id: body.org_id,
+        org_id: orgId,
         event_type: body.event_type,
         step_index: body.step_index ?? null,
         question_id: body.question_id ?? null,

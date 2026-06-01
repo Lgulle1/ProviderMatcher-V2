@@ -4,6 +4,10 @@
   var supabaseBaseUrl =
     typeof SUPABASE_URL !== 'undefined' ? SUPABASE_URL : ''
 
+  var supabaseAnonKey = typeof SUPABASE_ANON_KEY !== 'undefined'
+    ? SUPABASE_ANON_KEY
+    : 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind1aHRmZXB0ZHJiZGxtbnh0dW1vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyMDY0MjUsImV4cCI6MjA5MDc4MjQyNX0.ixbiKjiUkp5pXIOZdGjGKm17oHtI_GzL8qf1G0TdYU4'
+
   function generateUUID() {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
       var r = (Math.random() * 16) | 0
@@ -1278,12 +1282,12 @@
         var config = (this.data && this.data.config) || {}
         fetch(SUPABASE_URL + '/functions/v1/track-session', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'apikey': supabaseAnonKey, 'Authorization': 'Bearer ' + supabaseAnonKey },
           body: JSON.stringify({
             type: 'event',
             session_id: this.state.sessionId,
-            widget_id: config.widget_id,
-            org_id: config.org_id,
+            widget_id: this.widgetId,
+            org_id: config.org_id || null,
             event_type: eventType,
             step_index: stepIndex != null ? stepIndex : null,
             question_id: questionId != null ? questionId : null,
@@ -1299,7 +1303,7 @@
       try {
         await fetch(SUPABASE_URL + '/functions/v1/track-session', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'apikey': supabaseAnonKey, 'Authorization': 'Bearer ' + supabaseAnonKey },
           body: JSON.stringify({
             widget_id: this.widgetId,
             session_id: this.state.sessionId,
@@ -1319,7 +1323,7 @@
       try {
         fetch(SUPABASE_URL + '/functions/v1/track-session', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'apikey': supabaseAnonKey, 'Authorization': 'Bearer ' + supabaseAnonKey },
           body: JSON.stringify({
             widget_id: this.widgetId,
             session_id: this.state.sessionId,

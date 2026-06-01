@@ -96,7 +96,7 @@ export default function WidgetsPage() {
 
   const embedScript =
     modal.type === 'embed' && modal.payload
-      ? `<script src="https://providermatcher.netlify.app/widget.js" data-widget-id="${modal.payload.id}"></script>`
+      ? `<script src="https://lgulle1.github.io/ProviderMatcher-V2/widget.js" data-widget-id="${modal.payload.id}"></script>`
       : ''
 
   async function copyEmbedCode() {

@@ -1,690 +1,708 @@
 import { Fragment, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { BarChart3, ChevronDown, ChevronRight, MousePointerClick, TrendingDown, Users } from 'lucide-react'
+import {
+  BarChart3,
+  ChevronDown,
+  ChevronRight,
+  MousePointerClick,
+  Users,
+  TrendingUp,
+  Phone,
+  BookOpen,
+} from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../stores/authStore'
-import type { WidgetSession } from '../types/database'
 
-interface CaseTypeRef {
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface SessionEvent {
   id: string
-  name: string
+  session_id: string
+  widget_id: string
+  org_id: string
+  event_type: string
+  step_index: number | null
+  question_id: string | null
+  question_text: string | null
+  created_at: string
 }
 
-interface ProviderRef {
+interface WidgetSession {
   id: string
-  name: string
+  session_id: string
+  widget_id: string | null
+  org_id: string | null
+  case_type_id: string | null
+  answers: Record<string, unknown>
+  results_count: number | null
+  zero_results: boolean | null
+  providers_clicked: string[]
+  created_at: string
 }
+
+interface WidgetRef { id: string; name: string; status: string }
+interface CaseTypeRef { id: string; name: string }
+interface ProviderRef { id: string; name: string }
 
 interface AnalyticsData {
+  events: SessionEvent[]
   sessions: WidgetSession[]
+  widgets: WidgetRef[]
   caseTypes: CaseTypeRef[]
   providers: ProviderRef[]
 }
 
-async function fetchAnalytics(orgId: string, selectedWidgetId: string | null): Promise<AnalyticsData> {
-  let sessionsQuery = supabase
-    .from('widget_sessions')
-    .select('*')
-    .eq('org_id', orgId)
-    .order('created_at', { ascending: false })
-  if (selectedWidgetId) {
-    sessionsQuery = sessionsQuery.eq('widget_id', selectedWidgetId)
-  }
+// ─── Fetch ────────────────────────────────────────────────────────────────────
 
-  const [sessionsRes, caseTypesRes, providersRes] = await Promise.all([
-    sessionsQuery,
+async function fetchAnalyticsData(orgId: string): Promise<AnalyticsData> {
+  const [eventsRes, sessionsRes, widgetsRes, caseTypesRes, providersRes] = await Promise.all([
+    supabase.from('widget_session_events').select('*').eq('org_id', orgId).order('created_at', { ascending: false }),
+    supabase.from('widget_sessions').select('*').eq('org_id', orgId).order('created_at', { ascending: false }),
+    supabase.from('widgets').select('id, name, status').eq('org_id', orgId).neq('status', 'archived'),
     supabase.from('case_types').select('id, name').eq('org_id', orgId),
     supabase.from('providers').select('id, name').eq('org_id', orgId),
   ])
-
-  if (sessionsRes.error) {
-    throw new Error(sessionsRes.error.message)
-  }
-  if (caseTypesRes.error) {
-    throw new Error(caseTypesRes.error.message)
-  }
-  if (providersRes.error) {
-    throw new Error(providersRes.error.message)
-  }
-
+  if (eventsRes.error) throw new Error(eventsRes.error.message)
+  if (sessionsRes.error) throw new Error(sessionsRes.error.message)
   return {
+    events: (eventsRes.data ?? []) as SessionEvent[],
     sessions: (sessionsRes.data ?? []) as WidgetSession[],
+    widgets: (widgetsRes.data ?? []) as WidgetRef[],
     caseTypes: (caseTypesRes.data ?? []) as CaseTypeRef[],
     providers: (providersRes.data ?? []) as ProviderRef[],
   }
 }
 
-function formatDateTime(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
-  } catch {
-    return iso
-  }
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function dayKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
 function formatDayLabel(date: Date): string {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
-function dayKey(date: Date): string {
-  const y = date.getFullYear()
-  const m = String(date.getMonth() + 1).padStart(2, '0')
-  const d = String(date.getDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
+function formatDateTime(iso: string): string {
+  try { return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) }
+  catch { return iso }
 }
 
-function SessionsOverTimeChart({ counts, labels }: { counts: number[]; labels: string[] }) {
+// ─── Line Chart ───────────────────────────────────────────────────────────────
+
+function LineChart({ counts, labels, total }: { counts: number[]; labels: string[]; total: number }) {
   const width = 640
   const height = 160
-  const padLeft = 8
-  const padRight = 8
-  const padTop = 8
-  const padBottom = 28
-  const chartW = width - padLeft - padRight
-  const chartH = height - padTop - padBottom
+  const padL = 8, padR = 8, padT = 12, padB = 28
+  const w = width - padL - padR
+  const h = height - padT - padB
   const max = Math.max(...counts, 1)
-  const barGap = 2
-  const barW = counts.length > 0 ? (chartW - barGap * (counts.length - 1)) / counts.length : chartW
+  const pts = counts.map((c, i) => ({
+    x: padL + (counts.length > 1 ? (i / (counts.length - 1)) * w : w / 2),
+    y: padT + h - (c / max) * h,
+    c,
+  }))
+  const pathD = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')
+  const areaD = pts.length > 1
+    ? `${pathD} L${pts[pts.length - 1].x},${padT + h} L${pts[0].x},${padT + h} Z`
+    : ''
+  const labelEvery = Math.ceil(counts.length / 8)
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="w-full" role="img" aria-label="Sessions over the last 30 days">
-      {counts.map((count, i) => {
-        const barH = max > 0 ? (count / max) * chartH : 0
-        const x = padLeft + i * (barW + barGap)
-        const y = padTop + chartH - barH
-        return (
-          <g key={labels[i]}>
-            <rect
-              x={x}
-              y={y}
-              width={Math.max(barW, 1)}
-              height={Math.max(barH, 0)}
-              rx={2}
-              className="fill-indigo-500"
-            />
-            {i % 5 === 0 || i === counts.length - 1 ? (
-              <text
-                x={x + barW / 2}
-                y={height - 6}
-                textAnchor="middle"
-                fontSize={9}
-                className="fill-slate-500"
-              >
-                {labels[i]}
-              </text>
-            ) : null}
-          </g>
-        )
-      })}
-    </svg>
-  )
-}
-
-interface FunnelChartProps {
-  steps: { label: string; count: number }[]
-  bookingCount: number
-  callCount: number
-  top: number
-}
-
-function FunnelChart({ steps, bookingCount, callCount, top }: FunnelChartProps) {
-  const allZero = steps.every((s) => s.count === 0)
-  const resultsShown = steps.find((s) => s.label === 'Results Shown')?.count ?? 0
-  const maxWidth = top > 0 ? top : 1
-
-  return (
-    <section className="mb-8 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="border-b border-slate-200 px-6 py-4">
-        <h2 className="font-semibold text-slate-900">Conversion funnel</h2>
+    <div>
+      <div className="mb-2 flex items-baseline gap-2">
+        <span className="text-2xl font-bold text-slate-900">{total.toLocaleString()}</span>
+        <span className="text-sm text-slate-500">total opens</span>
       </div>
-      {allZero ? (
-        <p className="px-6 py-8 text-center text-sm text-slate-500">No funnel data yet.</p>
-      ) : (
-        <div className="space-y-3 px-6 py-4">
-          {steps.map((step, i) => {
-            const prevCount = i > 0 ? steps[i - 1].count : step.count
-            const dropoff = i > 0 && prevCount > 0 ? Math.round((1 - step.count / prevCount) * 100) : 0
-            const widthPct = Math.max((step.count / maxWidth) * 100, step.count > 0 ? 2 : 0)
-            return (
-              <div key={`${step.label}-${i}`} className="flex items-center gap-3">
-                <div
-                  className="w-36 shrink-0 truncate text-sm font-medium text-slate-700"
-                  title={step.label}
-                >
-                  {step.label}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="h-8 overflow-hidden rounded-md bg-slate-100">
-                    <div
-                      className="h-full rounded-md bg-indigo-500 transition-all"
-                      style={{ width: `${widthPct}%` }}
-                    />
-                  </div>
-                </div>
-                <div className="w-28 shrink-0 text-right text-sm text-slate-600">
-                  <span className="font-semibold text-slate-900">{step.count}</span>
-                  {i > 0 ? <span className="text-slate-500"> · −{dropoff}%</span> : null}
-                </div>
-              </div>
-            )
-          })}
-          <div className="mt-4 grid grid-cols-1 gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2">
-            {(
-              [
-                { label: 'Booking Clicked', count: bookingCount },
-                { label: 'Call Clicked', count: callCount },
-              ] as const
-            ).map((item) => {
-              const pct = resultsShown > 0 ? Math.round((item.count / resultsShown) * 100) : 0
-              const widthPct = Math.max(
-                (resultsShown > 0 ? item.count / resultsShown : 0) * 100,
-                item.count > 0 ? 2 : 0
-              )
-              return (
-                <div key={item.label}>
-                  <div className="mb-1 flex items-center justify-between text-sm">
-                    <span className="font-medium text-slate-700">{item.label}</span>
-                    <span className="text-slate-600">
-                      <span className="font-semibold text-slate-900">{item.count}</span>
-                      <span className="text-slate-500"> · {pct}% of results</span>
-                    </span>
-                  </div>
-                  <div className="h-6 overflow-hidden rounded-md bg-slate-100">
-                    <div
-                      className="h-full rounded-md bg-violet-500 transition-all"
-                      style={{ width: `${widthPct}%` }}
-                    />
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-    </section>
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full" role="img" aria-label="Sessions over time">
+        <defs>
+          <linearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#6366f1" />
+            <stop offset="100%" stopColor="#6366f1" stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        {areaD && <path d={areaD} fill="url(#lineGrad)" opacity={0.15} />}
+        {pts.length > 1 && (
+          <path d={pathD} fill="none" stroke="#6366f1" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+        )}
+        {pts.map((p, i) => (
+          <g key={i}>
+            <circle cx={p.x} cy={p.y} r={p.c > 0 ? 3 : 2} fill={p.c > 0 ? '#6366f1' : '#cbd5e1'} />
+            {(i % labelEvery === 0 || i === counts.length - 1) && (
+              <text x={p.x} y={height - 6} textAnchor="middle" fontSize={9} fill="#94a3b8">{labels[i]}</text>
+            )}
+          </g>
+        ))}
+      </svg>
+    </div>
   )
 }
+
+// ─── Funnel Chart ─────────────────────────────────────────────────────────────
+
+type FunnelMode = 'combined' | 'booking' | 'call'
+
+interface FunnelStep {
+  label: string
+  count: number
+  pct: number
+  isCTA?: boolean
+}
+
+function FunnelChart({ steps, mode, onModeChange }: {
+  steps: FunnelStep[]
+  mode: FunnelMode
+  onModeChange: (m: FunnelMode) => void
+}) {
+  const max = steps[0]?.count ?? 1
+  return (
+    <div>
+      <div className="mb-4 flex gap-1.5">
+        {(['combined', 'booking', 'call'] as FunnelMode[]).map(m => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => onModeChange(m)}
+            className={`rounded-md border px-3 py-1 text-xs font-medium transition-colors ${
+              mode === m
+                ? 'border-indigo-600 bg-indigo-600 text-white'
+                : 'border-slate-300 bg-white text-slate-600 hover:border-indigo-400'
+            }`}
+          >
+            {m === 'combined' ? 'Combined' : m === 'booking' ? 'Book Only' : 'Call Only'}
+          </button>
+        ))}
+      </div>
+      <div className="space-y-3">
+        {steps.map((step, i) => (
+          <div key={i}>
+            <div className="mb-1 flex items-center justify-between text-sm">
+              <span className={`font-medium ${step.isCTA ? 'text-indigo-700' : 'text-slate-700'}`}>{step.label}</span>
+              <div className="flex items-center gap-3">
+                <span className="font-semibold tabular-nums text-slate-900">{step.count.toLocaleString()}</span>
+                <span className="w-10 text-right text-xs text-slate-500">{step.pct}%</span>
+              </div>
+            </div>
+            <div className="h-6 w-full overflow-hidden rounded-md bg-slate-100">
+              <div
+                className={`h-full rounded-md transition-all duration-500 ${step.isCTA ? 'bg-indigo-600' : 'bg-indigo-400'}`}
+                style={{ width: `${max > 0 ? (step.count / max) * 100 : 0}%` }}
+              />
+            </div>
+            {i < steps.length - 1 && (() => {
+              const dropped = steps[i].count - steps[i + 1].count
+              const dropPct = steps[i].count > 0 ? Math.round((dropped / steps[i].count) * 100) : 0
+              return dropped > 0 ? (
+                <p className="mt-0.5 text-right text-xs text-red-400">
+                  ↓ {dropped.toLocaleString()} dropped ({dropPct}%)
+                </p>
+              ) : null
+            })()}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function AnalyticsPage() {
-  const orgName = useAuthStore((s) => s.org?.name ?? '')
-  const orgId = useAuthStore((s) => s.org?.id ?? '')
-  const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null)
+  const orgId = useAuthStore(s => s.org?.id ?? '')
+  const orgName = useAuthStore(s => s.org?.name ?? '')
+
+  const [selectedWidgetId, setSelectedWidgetId] = useState<string>('all')
   const [datePreset, setDatePreset] = useState<'7d' | '30d' | '90d' | 'custom'>('30d')
-  const [customStart, setCustomStart] = useState<string>('')
-  const [customEnd, setCustomEnd] = useState<string>('')
-  const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null)
+  const [customStart, setCustomStart] = useState('')
+  const [customEnd, setCustomEnd] = useState('')
+  const [funnelMode, setFunnelMode] = useState<FunnelMode>('combined')
+  const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null)
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['analytics', orgId, selectedWidgetId],
-    queryFn: () => fetchAnalytics(orgId, selectedWidgetId),
+    queryKey: ['analytics-v2', orgId],
+    queryFn: () => fetchAnalyticsData(orgId),
     enabled: Boolean(orgId),
   })
 
-  const { data: funnelEvents } = useQuery({
-    queryKey: ['funnel-events', orgId, selectedWidgetId],
-    queryFn: async () => {
-      let query = supabase
-        .from('widget_session_events')
-        .select('session_id, event_type, step_index, question_id, question_text, created_at')
-        .eq('org_id', orgId)
-        .order('created_at', { ascending: true })
-      if (selectedWidgetId) {
-        query = query.eq('widget_id', selectedWidgetId)
-      }
-      const { data } = await query
-      return data ?? []
-    },
-    enabled: Boolean(orgId),
-  })
+  // ── Date bounds
+  const { dateStart, dateEnd } = useMemo(() => {
+    const now = new Date()
+    if (datePreset === 'custom') {
+      const s = customStart ? new Date(customStart) : null
+      const e = customEnd ? new Date(customEnd) : null
+      if (s) s.setHours(0, 0, 0, 0)
+      if (e) e.setHours(23, 59, 59, 999)
+      return { dateStart: s, dateEnd: e }
+    }
+    const days = datePreset === '7d' ? 6 : datePreset === '90d' ? 89 : 29
+    const s = new Date(now)
+    s.setDate(now.getDate() - days)
+    s.setHours(0, 0, 0, 0)
+    return { dateStart: s, dateEnd: null as Date | null }
+  }, [datePreset, customStart, customEnd])
 
-  const { data: widgets } = useQuery({
-    queryKey: ['widgets-list', orgId],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from('widgets')
-        .select('id, button_text, status')
-        .eq('org_id', orgId)
-        .neq('status', 'archived')
-        .order('created_at', { ascending: false })
-      return data ?? []
-    },
-    enabled: Boolean(orgId),
-  })
+  // ── Filtered events & sessions
+  const filteredEvents = useMemo(() => {
+    let evs = data?.events ?? []
+    if (selectedWidgetId !== 'all') evs = evs.filter(e => e.widget_id === selectedWidgetId)
+    if (dateStart) evs = evs.filter(e => new Date(e.created_at) >= dateStart)
+    if (dateEnd) evs = evs.filter(e => new Date(e.created_at) <= dateEnd)
+    return evs
+  }, [data?.events, selectedWidgetId, dateStart, dateEnd])
 
   const filteredSessions = useMemo(() => {
-    const sessions = data?.sessions ?? []
-    const now = new Date()
-    let start: Date | null = null
-    let end: Date | null = null
-    if (datePreset === '7d') {
-      start = new Date(now)
-      start.setDate(now.getDate() - 6)
-    } else if (datePreset === '30d') {
-      start = new Date(now)
-      start.setDate(now.getDate() - 29)
-    } else if (datePreset === '90d') {
-      start = new Date(now)
-      start.setDate(now.getDate() - 89)
-    } else if (datePreset === 'custom' && customStart) {
-      start = new Date(customStart)
-      end = customEnd ? new Date(customEnd) : now
-    }
-    if (!start) return sessions
-    start.setHours(0, 0, 0, 0)
-    if (end) end.setHours(23, 59, 59, 999)
-    return sessions.filter((s) => {
-      const d = new Date(s.created_at)
-      if (d < start!) return false
-      if (end && d > end) return false
-      return true
-    })
-  }, [data?.sessions, datePreset, customStart, customEnd])
+    let sess = data?.sessions ?? []
+    if (selectedWidgetId !== 'all') sess = sess.filter(s => s.widget_id === selectedWidgetId)
+    if (dateStart) sess = sess.filter(s => new Date(s.created_at) >= dateStart)
+    if (dateEnd) sess = sess.filter(s => new Date(s.created_at) <= dateEnd)
+    return sess
+  }, [data?.sessions, selectedWidgetId, dateStart, dateEnd])
 
+  // ── Lookup maps
   const caseTypeNameById = useMemo(() => {
-    const map = new Map<string, string>()
-    data?.caseTypes.forEach((ct) => map.set(ct.id, ct.name))
-    return map
+    const m = new Map<string, string>()
+    data?.caseTypes.forEach(ct => m.set(ct.id, ct.name))
+    return m
   }, [data?.caseTypes])
 
   const providerNameById = useMemo(() => {
-    const map = new Map<string, string>()
-    data?.providers.forEach((p) => map.set(p.id, p.name))
-    return map
+    const m = new Map<string, string>()
+    data?.providers.forEach(p => m.set(p.id, p.name))
+    return m
   }, [data?.providers])
 
-  const funnel = useMemo(() => {
-    const sessions = filteredSessions
-    const total = sessions.length
-    const gotResults = sessions.filter((s) => !s.zero_results).length
-    const clickedBooking = sessions.filter((s) => (s.providers_clicked ?? []).length > 0).length
-    const gotResultsNoClick = sessions.filter(
-      (s) => !s.zero_results && (s.providers_clicked ?? []).length === 0
-    ).length
-    const dropOffRate = gotResults > 0 ? Math.round((gotResultsNoClick / gotResults) * 100) : 0
-    return { total, gotResults, clickedBooking, dropOffRate }
-  }, [filteredSessions])
-
-  const sessionsOverTime = useMemo(() => {
-    const sessions = filteredSessions
-    const dayCount = datePreset === '7d' ? 7 : datePreset === '90d' ? 90 : 30
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const days: { key: string; label: string; count: number }[] = []
-    for (let i = dayCount - 1; i >= 0; i -= 1) {
-      const d = new Date(today)
-      d.setDate(today.getDate() - i)
-      days.push({ key: dayKey(d), label: formatDayLabel(d), count: 0 })
-    }
-    const countByKey = new Map(days.map((d) => [d.key, 0]))
-    sessions.forEach((s) => {
-      const created = new Date(s.created_at)
-      created.setHours(0, 0, 0, 0)
-      const key = dayKey(created)
-      if (countByKey.has(key)) {
-        countByKey.set(key, (countByKey.get(key) ?? 0) + 1)
-      }
-    })
+  // ── Executive summary
+  const summary = useMemo(() => {
+    const opens = new Set(filteredEvents.filter(e => e.event_type === 'widget_opened').map(e => e.session_id)).size
+    const results = new Set(filteredEvents.filter(e => e.event_type === 'results_shown').map(e => e.session_id)).size
+    const bookingIds = new Set(filteredEvents.filter(e => e.event_type === 'booking_clicked').map(e => e.session_id))
+    const callIds = new Set(filteredEvents.filter(e => e.event_type === 'call_clicked').map(e => e.session_id))
+    const ctas = new Set([...bookingIds, ...callIds]).size
     return {
-      labels: days.map((d) => d.label),
-      counts: days.map((d) => countByKey.get(d.key) ?? 0),
+      opens, results,
+      bookings: bookingIds.size,
+      calls: callIds.size,
+      ctas,
+      conversionRate: opens > 0 ? Math.round((ctas / opens) * 100) : 0,
     }
-  }, [filteredSessions, datePreset])
+  }, [filteredEvents])
 
+  // ── Funnel steps
+  const funnelSteps = useMemo((): FunnelStep[] => {
+    const base = summary.opens
+    const pct = (n: number) => base > 0 ? Math.round((n / base) * 100) : 0
+    const countEvent = (type: string) =>
+      new Set(filteredEvents.filter(e => e.event_type === type).map(e => e.session_id)).size
+    const countStep = (idx: number) =>
+      new Set(filteredEvents.filter(e => e.event_type === 'question_answered' && e.step_index === idx).map(e => e.session_id)).size
+
+    const stepMap = new Map<number, string>()
+    filteredEvents
+      .filter(e => e.event_type === 'question_answered' && e.step_index != null)
+      .forEach(e => { if (!stepMap.has(e.step_index!)) stepMap.set(e.step_index!, e.question_text ?? `Step ${e.step_index! + 1}`) })
+    const questionSteps = Array.from(stepMap.entries()).sort((a, b) => a[0] - b[0])
+
+    const steps: FunnelStep[] = [{ label: 'Widget Opened', count: base, pct: 100 }]
+
+    questionSteps.forEach(([idx, text]) => {
+      const count = countStep(idx)
+      steps.push({ label: text, count, pct: pct(count) })
+    })
+
+    const resultsCount = countEvent('results_shown')
+    steps.push({ label: 'Results Shown', count: resultsCount, pct: pct(resultsCount) })
+
+    if (funnelMode === 'combined') {
+      const bookIds = new Set(filteredEvents.filter(e => e.event_type === 'booking_clicked').map(e => e.session_id))
+      const callIds = new Set(filteredEvents.filter(e => e.event_type === 'call_clicked').map(e => e.session_id))
+      const count = new Set([...bookIds, ...callIds]).size
+      steps.push({ label: 'Booked or Called', count, pct: pct(count), isCTA: true })
+    } else if (funnelMode === 'booking') {
+      const count = countEvent('booking_clicked')
+      steps.push({ label: 'Booking Clicked', count, pct: pct(count), isCTA: true })
+    } else {
+      const count = countEvent('call_clicked')
+      steps.push({ label: 'Call Clicked', count, pct: pct(count), isCTA: true })
+    }
+
+    return steps
+  }, [filteredEvents, funnelMode, summary.opens])
+
+  // ── Sessions over time
+  const sessionsOverTime = useMemo(() => {
+    const dayCount = datePreset === '7d' ? 7 : datePreset === '90d' ? 90 : 30
+    const today = new Date(); today.setHours(0, 0, 0, 0)
+    const days: { key: string; label: string }[] = []
+    for (let i = dayCount - 1; i >= 0; i--) {
+      const d = new Date(today); d.setDate(today.getDate() - i)
+      days.push({ key: dayKey(d), label: formatDayLabel(d) })
+    }
+    const byDay = new Map(days.map(d => [d.key, new Set<string>()]))
+    filteredEvents
+      .filter(e => e.event_type === 'widget_opened')
+      .forEach(e => {
+        const d = new Date(e.created_at); d.setHours(0, 0, 0, 0)
+        byDay.get(dayKey(d))?.add(e.session_id)
+      })
+    return {
+      labels: days.map(d => d.label),
+      counts: days.map(d => byDay.get(d.key)?.size ?? 0),
+    }
+  }, [filteredEvents, datePreset])
+
+  // ── Sessions by case type
   const sessionsByCaseType = useMemo(() => {
-    const sessions = filteredSessions
-    const total = sessions.length
+    const total = filteredSessions.length
     const counts = new Map<string, number>()
-    sessions.forEach((s) => {
+    filteredSessions.forEach(s => {
       const id = s.case_type_id ?? '__none__'
       counts.set(id, (counts.get(id) ?? 0) + 1)
     })
-    const rows = Array.from(counts.entries()).map(([id, count]) => ({
-      id,
-      name: id === '__none__' ? '—' : caseTypeNameById.get(id) ?? 'Unknown',
-      count,
-      pct: total > 0 ? Math.round((count / total) * 100) : 0,
-    }))
-    rows.sort((a, b) => b.count - a.count)
-    return { rows, total }
+    return Array.from(counts.entries())
+      .map(([id, count]) => ({
+        id, count,
+        name: id === '__none__' ? '—' : caseTypeNameById.get(id) ?? 'Unknown',
+        pct: total > 0 ? Math.round((count / total) * 100) : 0,
+      }))
+      .sort((a, b) => b.count - a.count)
   }, [filteredSessions, caseTypeNameById])
 
-  const mostClickedProviders = useMemo(() => {
-    const sessions = filteredSessions
+  // ── Providers by clicks
+  const providersByClicks = useMemo(() => {
     const counts = new Map<string, number>()
-    sessions.forEach((s) => {
-      ;(s.providers_clicked ?? []).forEach((pid) => {
-        counts.set(pid, (counts.get(pid) ?? 0) + 1)
-      })
+    filteredSessions.forEach(s => {
+      (s.providers_clicked ?? []).forEach(pid => counts.set(pid, (counts.get(pid) ?? 0) + 1))
     })
     return Array.from(counts.entries())
-      .map(([id, clicks]) => ({
-        id,
-        name: providerNameById.get(id) ?? 'Unknown',
-        clicks,
-      }))
+      .map(([id, clicks]) => ({ id, clicks, name: providerNameById.get(id) ?? 'Unknown' }))
       .sort((a, b) => b.clicks - a.clicks)
       .slice(0, 10)
   }, [filteredSessions, providerNameById])
 
-  const funnelSteps = useMemo(() => {
-    const events = funnelEvents ?? []
-
-    const sessionsByEvent = new Map<string, Set<string>>()
-    events.forEach((e) => {
-      if (!sessionsByEvent.has(e.event_type)) {
-        sessionsByEvent.set(e.event_type, new Set())
-      }
-      sessionsByEvent.get(e.event_type)!.add(e.session_id)
+  // ── Session log
+  const sessionLog = useMemo(() => {
+    const map = new Map<string, { events: SessionEvent[]; session?: WidgetSession }>()
+    filteredEvents.forEach(e => {
+      if (!map.has(e.session_id)) map.set(e.session_id, { events: [] })
+      map.get(e.session_id)!.events.push(e)
     })
-
-    const questionSteps = new Map<number, { label: string; sessions: Set<string> }>()
-    events
-      .filter((e) => e.event_type === 'question_answered')
-      .forEach((e) => {
-        const idx = e.step_index ?? 0
-        if (!questionSteps.has(idx)) {
-          questionSteps.set(idx, { label: e.question_text ?? `Step ${idx}`, sessions: new Set() })
+    filteredSessions.forEach(s => {
+      if (map.has(s.session_id)) map.get(s.session_id)!.session = s
+    })
+    return Array.from(map.entries())
+      .map(([sessionId, d]) => {
+        const openedAt = d.events.find(e => e.event_type === 'widget_opened')?.created_at ?? d.events[0]?.created_at ?? ''
+        const caseTypeEvent = d.events.find(e => e.event_type === 'case_type_selected')
+        const caseTypeName = d.session?.case_type_id
+          ? (caseTypeNameById.get(d.session.case_type_id) ?? 'Unknown')
+          : (caseTypeEvent?.question_text ?? '—')
+        const booked = d.events.some(e => e.event_type === 'booking_clicked')
+        const called = d.events.some(e => e.event_type === 'call_clicked')
+        return {
+          sessionId, openedAt, caseTypeName,
+          booked, called, bookedOrCalled: booked || called,
+          questionEvents: d.events
+            .filter(e => e.event_type === 'question_answered')
+            .sort((a, b) => (a.step_index ?? 0) - (b.step_index ?? 0)),
+          providersClicked: d.session?.providers_clicked ?? [],
         }
-        questionSteps.get(idx)!.sessions.add(e.session_id)
       })
+      .filter(s => s.openedAt)
+      .sort((a, b) => new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime())
+      .slice(0, 100)
+  }, [filteredEvents, filteredSessions, caseTypeNameById])
 
-    const ordered = Array.from(questionSteps.entries()).sort((a, b) => a[0] - b[0])
-
-    const steps: { label: string; count: number }[] = [
-      { label: 'Widget Opened', count: sessionsByEvent.get('widget_opened')?.size ?? 0 },
-      { label: 'Case Type Selected', count: sessionsByEvent.get('case_type_selected')?.size ?? 0 },
-      ...ordered.map(([, v]) => ({ label: v.label, count: v.sessions.size })),
-      { label: 'Results Shown', count: sessionsByEvent.get('results_shown')?.size ?? 0 },
-    ]
-
-    const bookingCount = sessionsByEvent.get('booking_clicked')?.size ?? 0
-    const callCount = sessionsByEvent.get('call_clicked')?.size ?? 0
-    const top = steps[0]?.count ?? 0
-
-    return { steps, bookingCount, callCount, top }
-  }, [funnelEvents])
-
-  const analyticsLoading = Boolean(orgId) && isLoading
+  if (!orgId || isLoading) return <p className="p-8 text-sm text-slate-500">Loading analytics…</p>
+  if (error) return <p className="p-8 text-sm text-red-600">{error instanceof Error ? error.message : 'Error loading analytics.'}</p>
 
   return (
     <div>
+      {/* Header */}
       <section className="mb-8">
         <h1 className="text-2xl font-bold text-slate-900">Analytics</h1>
         <p className="mt-1 text-slate-500">{orgName}</p>
       </section>
 
-      {!orgId || analyticsLoading ? (
-        <p className="mb-8 text-sm text-slate-500">Loading analytics…</p>
-      ) : error ? (
-        <p className="mb-8 text-sm text-red-600">{error instanceof Error ? error.message : 'Unable to load analytics.'}</p>
-      ) : data ? (
-        <>
-          <div className="mb-6 flex flex-wrap items-center gap-2">
-            <span className="w-full text-xs text-slate-500">Filters all data below</span>
-            <select
-              value={selectedWidgetId ?? ''}
-              onChange={(e) => setSelectedWidgetId(e.target.value || null)}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700"
-            >
-              <option value="">All Widgets</option>
-              {(widgets ?? []).map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.button_text}
-                </option>
-              ))}
-            </select>
-            {(['7d', '30d', '90d'] as const).map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => setDatePreset(p)}
-                className={`rounded-md border px-3 py-1 text-xs font-medium transition-colors ${
-                  datePreset === p
-                    ? 'border-indigo-600 bg-indigo-600 text-white'
-                    : 'border-slate-300 bg-white text-slate-600 hover:border-indigo-400'
-                }`}
-              >
-                {p === '7d' ? 'Last 7 days' : p === '30d' ? 'Last 30 days' : 'Last 90 days'}
-              </button>
-            ))}
+      {/* Filters */}
+      <div className="mb-8 flex flex-wrap items-center gap-3">
+        <select
+          value={selectedWidgetId}
+          onChange={e => setSelectedWidgetId(e.target.value)}
+          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 shadow-sm focus:border-indigo-500 focus:outline-none"
+        >
+          <option value="all">All Widgets</option>
+          {(data?.widgets ?? []).map(w => (
+            <option key={w.id} value={w.id}>{w.name}</option>
+          ))}
+        </select>
+
+        <div className="flex items-center gap-1">
+          {(['7d', '30d', '90d'] as const).map(p => (
             <button
+              key={p}
               type="button"
-              onClick={() => setDatePreset('custom')}
-              className={`rounded-md border px-3 py-1 text-xs font-medium transition-colors ${
-                datePreset === 'custom'
+              onClick={() => setDatePreset(p)}
+              className={`rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
+                datePreset === p
                   ? 'border-indigo-600 bg-indigo-600 text-white'
                   : 'border-slate-300 bg-white text-slate-600 hover:border-indigo-400'
               }`}
             >
-              Custom range
+              {p === '7d' ? 'Last 7d' : p === '30d' ? 'Last 30d' : 'Last 90d'}
             </button>
-            {datePreset === 'custom' ? (
-              <div className="mt-1 flex w-full items-center gap-2">
-                <input
-                  type="date"
-                  value={customStart}
-                  onChange={(e) => setCustomStart(e.target.value)}
-                  className="rounded-md border border-slate-300 px-2 py-1 text-xs"
-                />
-                <span className="text-xs text-slate-400">to</span>
-                <input
-                  type="date"
-                  value={customEnd}
-                  onChange={(e) => setCustomEnd(e.target.value)}
-                  className="rounded-md border border-slate-300 px-2 py-1 text-xs"
-                />
-              </div>
-            ) : null}
+          ))}
+          <button
+            type="button"
+            onClick={() => setDatePreset('custom')}
+            className={`rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
+              datePreset === 'custom'
+                ? 'border-indigo-600 bg-indigo-600 text-white'
+                : 'border-slate-300 bg-white text-slate-600 hover:border-indigo-400'
+            }`}
+          >
+            Custom
+          </button>
+        </div>
+
+        {datePreset === 'custom' && (
+          <div className="flex items-center gap-2">
+            <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)}
+              className="rounded-md border border-slate-300 px-2 py-1 text-sm" />
+            <span className="text-sm text-slate-400">to</span>
+            <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)}
+              className="rounded-md border border-slate-300 px-2 py-1 text-sm" />
           </div>
+        )}
+      </div>
 
-          <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
-            <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50">
-                <BarChart3 className="h-5 w-5 text-indigo-600" aria-hidden />
-              </div>
-              <p className="mt-3 text-3xl font-bold text-slate-900">{funnel.total}</p>
-              <p className="mt-1 text-sm text-slate-500">Total Sessions</p>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50">
-                <Users className="h-5 w-5 text-emerald-600" aria-hidden />
-              </div>
-              <p className="mt-3 text-3xl font-bold text-slate-900">{funnel.gotResults}</p>
-              <p className="mt-1 text-sm text-slate-500">Got Results</p>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-50">
-                <MousePointerClick className="h-5 w-5 text-violet-600" aria-hidden />
-              </div>
-              <p className="mt-3 text-3xl font-bold text-slate-900">{funnel.clickedBooking}</p>
-              <p className="mt-1 text-sm text-slate-500">Clicked Booking</p>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-50">
-                <TrendingDown className="h-5 w-5 text-amber-600" aria-hidden />
-              </div>
-              <p className="mt-3 text-3xl font-bold text-slate-900">{funnel.dropOffRate}%</p>
-              <p className="mt-1 text-sm text-slate-500">Drop-off Rate</p>
-            </div>
+      {/* Executive Summary */}
+      <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50">
+            <BarChart3 className="h-4 w-4 text-indigo-600" aria-hidden />
           </div>
-
-          <FunnelChart
-            steps={funnelSteps.steps}
-            bookingCount={funnelSteps.bookingCount}
-            callCount={funnelSteps.callCount}
-            top={funnelSteps.top}
-          />
-
-          <section className="mb-8 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <div className="border-b border-slate-200 px-6 py-4">
-              <h2 className="font-semibold text-slate-900">Sessions over time</h2>
-            </div>
-            <div className="px-6 py-4">
-              <SessionsOverTimeChart counts={sessionsOverTime.counts} labels={sessionsOverTime.labels} />
-            </div>
-          </section>
-
-          <div className="mb-8 grid gap-8 lg:grid-cols-2">
-            <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-              <div className="border-b border-slate-200 px-6 py-4">
-                <h2 className="font-semibold text-slate-900">Sessions by Case Type</h2>
-              </div>
-              {sessionsByCaseType.rows.length === 0 ? (
-                <p className="px-6 py-8 text-center text-sm text-slate-500">No session data yet.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-max text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-medium uppercase text-slate-500">
-                        <th className="px-6 py-3">Case Type</th>
-                        <th className="px-6 py-3">Sessions</th>
-                        <th className="px-6 py-3">% of Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sessionsByCaseType.rows.map((row) => (
-                        <tr key={row.id} className="border-b border-slate-100 last:border-0">
-                          <td className="px-6 py-3 font-medium text-slate-900">{row.name}</td>
-                          <td className="px-6 py-3 text-slate-700">{row.count}</td>
-                          <td className="px-6 py-3 text-slate-700">{row.pct}%</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </section>
-
-            <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-              <div className="border-b border-slate-200 px-6 py-4">
-                <h2 className="font-semibold text-slate-900">Most Clicked Providers</h2>
-              </div>
-              {mostClickedProviders.length === 0 ? (
-                <p className="px-6 py-8 text-center text-sm text-slate-500">No booking clicks yet.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-max text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-medium uppercase text-slate-500">
-                        <th className="px-6 py-3">Provider</th>
-                        <th className="px-6 py-3">Clicks</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {mostClickedProviders.map((row) => (
-                        <tr key={row.id} className="border-b border-slate-100 last:border-0">
-                          <td className="px-6 py-3 font-medium text-slate-900">{row.name}</td>
-                          <td className="px-6 py-3 text-slate-700">{row.clicks}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </section>
+          <p className="mt-3 text-2xl font-bold text-slate-900">{summary.opens.toLocaleString()}</p>
+          <p className="mt-0.5 text-xs text-slate-500">Widget Opens</p>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50">
+            <Users className="h-4 w-4 text-emerald-600" aria-hidden />
           </div>
+          <p className="mt-3 text-2xl font-bold text-slate-900">{summary.results.toLocaleString()}</p>
+          <p className="mt-0.5 text-xs text-slate-500">Results Shown</p>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-50">
+            <MousePointerClick className="h-4 w-4 text-violet-600" aria-hidden />
+          </div>
+          <p className="mt-3 text-2xl font-bold text-slate-900">{summary.ctas.toLocaleString()}</p>
+          <p className="mt-0.5 text-xs text-slate-500">Total CTAs</p>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50">
+            <BookOpen className="h-4 w-4 text-blue-600" aria-hidden />
+          </div>
+          <p className="mt-3 text-2xl font-bold text-slate-900">{summary.bookings.toLocaleString()}</p>
+          <p className="mt-0.5 text-xs text-slate-500">Bookings</p>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-50">
+            <Phone className="h-4 w-4 text-amber-600" aria-hidden />
+          </div>
+          <p className="mt-3 text-2xl font-bold text-slate-900">{summary.calls.toLocaleString()}</p>
+          <p className="mt-0.5 text-xs text-slate-500">Calls</p>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-50">
+            <TrendingUp className="h-4 w-4 text-rose-600" aria-hidden />
+          </div>
+          <p className="mt-3 text-2xl font-bold text-slate-900">{summary.conversionRate}%</p>
+          <p className="mt-0.5 text-xs text-slate-500">Conversion</p>
+        </div>
+      </div>
 
-          <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-            <div className="border-b border-slate-200 px-6 py-4">
-              <h2 className="font-semibold text-slate-900">Session log</h2>
-            </div>
-            {filteredSessions.length === 0 ? (
-              <p className="px-6 py-8 text-center text-sm text-slate-500">No sessions recorded yet.</p>
+      {/* Funnel + Sessions Over Time */}
+      <div className="mb-8 grid gap-8 lg:grid-cols-2">
+        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 px-6 py-4">
+            <h2 className="font-semibold text-slate-900">Conversion Funnel</h2>
+          </div>
+          <div className="px-6 py-4">
+            {summary.opens === 0 ? (
+              <p className="py-8 text-center text-sm text-slate-500">
+                No funnel data yet. Open the widget on your live site to start tracking.
+              </p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-max text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-medium uppercase text-slate-500">
-                      <th className="w-8 px-4 py-3" aria-hidden />
-                      <th className="px-4 py-3">Date/Time</th>
-                      <th className="px-4 py-3">Case Type</th>
-                      <th className="px-4 py-3">Results Shown</th>
-                      <th className="px-4 py-3">Booking Clicked</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredSessions.map((session) => {
-                      const expanded = expandedSessionId === session.id
-                      const caseTypeName = session.case_type_id
-                        ? caseTypeNameById.get(session.case_type_id) ?? 'Unknown'
-                        : '—'
-                      const clicked = (session.providers_clicked ?? []).length > 0
-                      const answerEntries = Object.entries(session.answers ?? {})
-                      const clickedNames = (session.providers_clicked ?? []).map(
-                        (pid) => providerNameById.get(pid) ?? 'Unknown'
-                      )
-
-                      return (
-                        <Fragment key={session.id}>
-                          <tr
-                            className="cursor-pointer border-b border-slate-100 hover:bg-slate-50/80"
-                            onClick={() =>
-                              setExpandedSessionId(expanded ? null : session.id)
-                            }
-                          >
-                            <td className="px-4 py-3 text-slate-400">
-                              {expanded ? (
-                                <ChevronDown className="h-4 w-4" aria-hidden />
-                              ) : (
-                                <ChevronRight className="h-4 w-4" aria-hidden />
-                              )}
-                            </td>
-                            <td className="px-4 py-3 text-slate-700">{formatDateTime(session.created_at)}</td>
-                            <td className="px-4 py-3 text-slate-700">{caseTypeName}</td>
-                            <td className="px-4 py-3 text-slate-700">{session.results_count ?? 0}</td>
-                            <td className="px-4 py-3 text-slate-700">{clicked ? 'Yes' : 'No'}</td>
-                          </tr>
-                          {expanded ? (
-                            <tr key={`${session.id}-detail`} className="border-b border-slate-100 bg-slate-50/50">
-                              <td colSpan={5} className="px-6 py-4">
-                                <div className="grid gap-4 md:grid-cols-2">
-                                  <div>
-                                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                      Answers
-                                    </h3>
-                                    {answerEntries.length === 0 ? (
-                                      <p className="text-sm text-slate-500">No answers recorded.</p>
-                                    ) : (
-                                      <dl className="space-y-1 text-sm">
-                                        {answerEntries.map(([key, value]) => (
-                                          <div key={key} className="flex gap-2">
-                                            <dt className="shrink-0 font-medium text-slate-700">{key}:</dt>
-                                            <dd className="text-slate-600">{String(value)}</dd>
-                                          </div>
-                                        ))}
-                                      </dl>
-                                    )}
-                                  </div>
-                                  <div>
-                                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                      Providers Clicked
-                                    </h3>
-                                    {clickedNames.length === 0 ? (
-                                      <p className="text-sm text-slate-500">None</p>
-                                    ) : (
-                                      <ul className="list-inside list-disc text-sm text-slate-600">
-                                        {clickedNames.map((name, i) => (
-                                          <li key={`${session.id}-click-${i}`}>{name}</li>
-                                        ))}
-                                      </ul>
-                                    )}
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
-                          ) : null}
-                        </Fragment>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <FunnelChart steps={funnelSteps} mode={funnelMode} onModeChange={setFunnelMode} />
             )}
-          </section>
-        </>
-      ) : (
-        <p className="mb-8 text-sm text-slate-500">Unable to load analytics.</p>
-      )}
+          </div>
+        </section>
+
+        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 px-6 py-4">
+            <h2 className="font-semibold text-slate-900">Sessions Over Time</h2>
+          </div>
+          <div className="px-6 py-4">
+            <LineChart counts={sessionsOverTime.counts} labels={sessionsOverTime.labels} total={summary.opens} />
+          </div>
+        </section>
+      </div>
+
+      {/* Case Types + Providers */}
+      <div className="mb-8 grid gap-8 lg:grid-cols-2">
+        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 px-6 py-4">
+            <h2 className="font-semibold text-slate-900">Sessions by Case Type</h2>
+          </div>
+          {sessionsByCaseType.length === 0 ? (
+            <p className="px-6 py-8 text-center text-sm text-slate-500">No session data yet.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-max text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-medium uppercase text-slate-500">
+                    <th className="px-6 py-3">Case Type</th>
+                    <th className="px-6 py-3">Sessions</th>
+                    <th className="px-6 py-3">% of Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sessionsByCaseType.map(row => (
+                    <tr key={row.id} className="border-b border-slate-100 last:border-0">
+                      <td className="px-6 py-3 font-medium text-slate-900">{row.name}</td>
+                      <td className="px-6 py-3 tabular-nums text-slate-700">{row.count}</td>
+                      <td className="px-6 py-3 tabular-nums text-slate-700">{row.pct}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 px-6 py-4">
+            <h2 className="font-semibold text-slate-900">Most Clicked Providers</h2>
+          </div>
+          {providersByClicks.length === 0 ? (
+            <p className="px-6 py-8 text-center text-sm text-slate-500">No provider clicks yet.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-max text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-medium uppercase text-slate-500">
+                    <th className="px-6 py-3">Provider</th>
+                    <th className="px-6 py-3">Clicks</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {providersByClicks.map(row => (
+                    <tr key={row.id} className="border-b border-slate-100 last:border-0">
+                      <td className="px-6 py-3 font-medium text-slate-900">{row.name}</td>
+                      <td className="px-6 py-3 tabular-nums text-slate-700">{row.clicks}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </div>
+
+      {/* Session Log */}
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 px-6 py-4">
+          <h2 className="font-semibold text-slate-900">Session Log</h2>
+          <p className="mt-0.5 text-xs text-slate-500">Up to 100 most recent sessions</p>
+        </div>
+        {sessionLog.length === 0 ? (
+          <p className="px-6 py-8 text-center text-sm text-slate-500">No sessions recorded yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-max text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-medium uppercase text-slate-500">
+                  <th className="w-8 px-4 py-3" aria-hidden />
+                  <th className="px-4 py-3">Date / Time</th>
+                  <th className="px-4 py-3">Case Type</th>
+                  <th className="px-4 py-3">CTA</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sessionLog.map(s => {
+                  const expanded = expandedSessionId === s.sessionId
+                  const ctaLabel = s.booked && s.called ? 'Booked + Called'
+                    : s.booked ? 'Booked'
+                    : s.called ? 'Called'
+                    : '—'
+                  return (
+                    <Fragment key={s.sessionId}>
+                      <tr
+                        className="cursor-pointer border-b border-slate-100 hover:bg-slate-50/80"
+                        onClick={() => setExpandedSessionId(expanded ? null : s.sessionId)}
+                      >
+                        <td className="px-4 py-3 text-slate-400">
+                          {expanded
+                            ? <ChevronDown className="h-4 w-4" aria-hidden />
+                            : <ChevronRight className="h-4 w-4" aria-hidden />}
+                        </td>
+                        <td className="px-4 py-3 text-slate-700">{formatDateTime(s.openedAt)}</td>
+                        <td className="px-4 py-3 text-slate-700">{s.caseTypeName}</td>
+                        <td className={`px-4 py-3 ${s.bookedOrCalled ? 'font-semibold text-emerald-700' : 'text-slate-400'}`}>
+                          {ctaLabel}
+                        </td>
+                      </tr>
+                      {expanded && (
+                        <tr className="border-b border-slate-100 bg-slate-50/50">
+                          <td colSpan={4} className="px-6 py-4">
+                            <div className="grid gap-6 md:grid-cols-2">
+                              <div>
+                                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                  Question Flow
+                                </h3>
+                                {s.questionEvents.length === 0 ? (
+                                  <p className="text-sm text-slate-500">No questions answered.</p>
+                                ) : (
+                                  <ol className="space-y-2">
+                                    {s.questionEvents.map((e, i) => (
+                                      <li key={e.id} className="flex items-start gap-2 text-sm">
+                                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-medium text-indigo-700">
+                                          {i + 1}
+                                        </span>
+                                        <span className="text-slate-700">{e.question_text ?? `Step ${i + 1}`}</span>
+                                      </li>
+                                    ))}
+                                  </ol>
+                                )}
+                              </div>
+                              <div>
+                                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                  Providers Clicked
+                                </h3>
+                                {s.providersClicked.length === 0 ? (
+                                  <p className="text-sm text-slate-500">None</p>
+                                ) : (
+                                  <ul className="space-y-1">
+                                    {s.providersClicked.map((pid, i) => (
+                                      <li key={i} className="text-sm text-slate-700">
+                                        {providerNameById.get(pid) ?? 'Unknown'}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </div>
   )
 }
