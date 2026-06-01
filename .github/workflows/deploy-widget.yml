@@ -1,0 +1,33 @@
+name: Deploy Widget to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'widget/src/**'
+      - 'widget/build.js'
+      - 'widget/package.json'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Build widget
+        run: |
+          cd widget
+          npm install
+          NODE_ENV=production node build.js
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./widget/dist
