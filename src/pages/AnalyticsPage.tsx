@@ -7,6 +7,7 @@ import {
   MousePointerClick,
   Users,
   TrendingUp,
+  TrendingDown,
   Phone,
   BookOpen,
 } from 'lucide-react'
@@ -147,6 +148,7 @@ interface FunnelStep {
   count: number
   pct: number
   isCTA?: boolean
+  isZeroResults?: boolean
 }
 
 function FunnelChart({ steps, mode, onModeChange }: {
@@ -177,7 +179,7 @@ function FunnelChart({ steps, mode, onModeChange }: {
         {steps.map((step, i) => (
           <div key={i}>
             <div className="mb-1 flex items-center justify-between text-sm">
-              <span className={`font-medium ${step.isCTA ? 'text-indigo-700' : 'text-slate-700'}`}>{step.label}</span>
+              <span className={`font-medium ${step.isZeroResults ? 'text-red-600' : step.isCTA ? 'text-indigo-700' : 'text-slate-700'}`}>{step.label}</span>
               <div className="flex items-center gap-3">
                 <span className="font-semibold tabular-nums text-slate-900">{step.count.toLocaleString()}</span>
                 <span className="w-10 text-right text-xs text-slate-500">{step.pct}%</span>
@@ -185,7 +187,9 @@ function FunnelChart({ steps, mode, onModeChange }: {
             </div>
             <div className="h-6 w-full overflow-hidden rounded-md bg-slate-100">
               <div
-                className={`h-full rounded-md transition-all duration-500 ${step.isCTA ? 'bg-indigo-600' : 'bg-indigo-400'}`}
+                className={`h-full rounded-md transition-all duration-500 ${
+                  step.isZeroResults ? 'bg-red-400' : step.isCTA ? 'bg-indigo-600' : 'bg-indigo-400'
+                }`}
                 style={{ width: `${max > 0 ? (step.count / max) * 100 : 0}%` }}
               />
             </div>
@@ -278,21 +282,26 @@ export default function AnalyticsPage() {
     const bookingIds = new Set(filteredEvents.filter(e => e.event_type === 'booking_clicked').map(e => e.session_id))
     const callIds = new Set(filteredEvents.filter(e => e.event_type === 'call_clicked').map(e => e.session_id))
     const ctas = new Set([...bookingIds, ...callIds]).size
+    const zeroResults = filteredSessions.filter(s => s.zero_results === true).length
     return {
       opens, results,
       bookings: bookingIds.size,
       calls: callIds.size,
       ctas,
+      zeroResults,
       conversionRate: opens > 0 ? Math.round((ctas / opens) * 100) : 0,
     }
-  }, [filteredEvents])
+  }, [filteredEvents, filteredSessions])
 
   // ── Funnel steps
   const funnelSteps = useMemo((): FunnelStep[] => {
-    const base = summary.opens
+    // Use total unique sessions across ALL events as the baseline — fixes the 129% bug
+    // where question events outnumber widget_opened events due to timing/back navigation
+    const base = new Set(filteredEvents.map(e => e.session_id)).size
     const pct = (n: number) => base > 0 ? Math.round((n / base) * 100) : 0
     const countEvent = (type: string) =>
       new Set(filteredEvents.filter(e => e.event_type === type).map(e => e.session_id)).size
+    // Deduplicate back-button re-answers: only count unique session_ids per step
     const countStep = (idx: number) =>
       new Set(filteredEvents.filter(e => e.event_type === 'question_answered' && e.step_index === idx).map(e => e.session_id)).size
 
@@ -302,7 +311,8 @@ export default function AnalyticsPage() {
       .forEach(e => { if (!stepMap.has(e.step_index!)) stepMap.set(e.step_index!, e.question_text ?? `Step ${e.step_index! + 1}`) })
     const questionSteps = Array.from(stepMap.entries()).sort((a, b) => a[0] - b[0])
 
-    const steps: FunnelStep[] = [{ label: 'Widget Opened', count: base, pct: 100 }]
+    const openCount = countEvent('widget_opened')
+    const steps: FunnelStep[] = [{ label: 'Widget Opened', count: openCount, pct: pct(openCount) }]
 
     questionSteps.forEach(([idx, text]) => {
       const count = countStep(idx)
@@ -326,7 +336,7 @@ export default function AnalyticsPage() {
     }
 
     return steps
-  }, [filteredEvents, funnelMode, summary.opens])
+  }, [filteredEvents, filteredSessions, funnelMode])
 
   // ── Sessions over time
   const sessionsOverTime = useMemo(() => {
@@ -388,22 +398,57 @@ export default function AnalyticsPage() {
     })
     filteredSessions.forEach(s => {
       if (map.has(s.session_id)) map.get(s.session_id)!.session = s
+      else map.set(s.session_id, { events: [], session: s })
     })
     return Array.from(map.entries())
       .map(([sessionId, d]) => {
-        const openedAt = d.events.find(e => e.event_type === 'widget_opened')?.created_at ?? d.events[0]?.created_at ?? ''
-        const caseTypeEvent = d.events.find(e => e.event_type === 'case_type_selected')
+        const sortedEvents = [...d.events].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+        const openedAt = sortedEvents.find(e => e.event_type === 'widget_opened')?.created_at ?? sortedEvents[0]?.created_at ?? d.session?.created_at ?? ''
+        const caseTypeEvent = sortedEvents.find(e => e.event_type === 'case_type_selected')
         const caseTypeName = d.session?.case_type_id
           ? (caseTypeNameById.get(d.session.case_type_id) ?? 'Unknown')
           : (caseTypeEvent?.question_text ?? '—')
-        const booked = d.events.some(e => e.event_type === 'booking_clicked')
-        const called = d.events.some(e => e.event_type === 'call_clicked')
+        const booked = sortedEvents.some(e => e.event_type === 'booking_clicked')
+        const called = sortedEvents.some(e => e.event_type === 'call_clicked')
+        const zeroResults = d.session?.zero_results === true
+
+        // Detect back navigation: if step_index goes backwards at any point
+        const stepEvents = sortedEvents.filter(e => e.event_type === 'question_answered' && e.step_index != null)
+        let wentBack = false
+        for (let i = 1; i < stepEvents.length; i++) {
+          if ((stepEvents[i].step_index ?? 0) <= (stepEvents[i - 1].step_index ?? 0)) {
+            wentBack = true
+            break
+          }
+        }
+
+        // Drop-off point: last meaningful event type
+        const eventOrder = ['widget_opened', 'case_type_selected', 'question_answered', 'results_shown', 'booking_clicked', 'call_clicked']
+        const lastEvent = [...sortedEvents].reverse().find(e => eventOrder.includes(e.event_type))
+        const dropOffPoint = lastEvent?.event_type === 'booking_clicked' || lastEvent?.event_type === 'call_clicked'
+          ? 'Converted'
+          : lastEvent?.event_type === 'results_shown'
+          ? zeroResults ? 'No Results' : 'Saw Results — No CTA'
+          : lastEvent?.event_type === 'question_answered'
+          ? `Dropped at: ${lastEvent.question_text ?? 'question'}`
+          : lastEvent?.event_type === 'case_type_selected'
+          ? 'Dropped after case type'
+          : lastEvent?.event_type === 'widget_opened'
+          ? 'Opened — no interaction'
+          : 'Unknown'
+
+        // Deduplicated question flow (last answer per step when they went back)
+        const stepMap = new Map<number, SessionEvent>()
+        stepEvents.forEach(e => stepMap.set(e.step_index!, e))
+        const questionFlow = Array.from(stepMap.entries())
+          .sort((a, b) => a[0] - b[0])
+          .map(([, e]) => e)
+
         return {
           sessionId, openedAt, caseTypeName,
           booked, called, bookedOrCalled: booked || called,
-          questionEvents: d.events
-            .filter(e => e.event_type === 'question_answered')
-            .sort((a, b) => (a.step_index ?? 0) - (b.step_index ?? 0)),
+          zeroResults, wentBack, dropOffPoint,
+          questionFlow,
           providersClicked: d.session?.providers_clicked ?? [],
         }
       })
@@ -476,7 +521,7 @@ export default function AnalyticsPage() {
       </div>
 
       {/* Executive Summary */}
-      <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-7">
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50">
             <BarChart3 className="h-4 w-4 text-indigo-600" aria-hidden />
@@ -518,6 +563,13 @@ export default function AnalyticsPage() {
           </div>
           <p className="mt-3 text-2xl font-bold text-slate-900">{summary.conversionRate}%</p>
           <p className="mt-0.5 text-xs text-slate-500">Conversion</p>
+        </div>
+        <div className="rounded-xl border border-red-100 bg-red-50 p-4 shadow-sm">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-100">
+            <TrendingDown className="h-4 w-4 text-red-500" aria-hidden />
+          </div>
+          <p className="mt-3 text-2xl font-bold text-red-700">{summary.zeroResults.toLocaleString()}</p>
+          <p className="mt-0.5 text-xs text-red-500">No Results</p>
         </div>
       </div>
 
@@ -625,7 +677,8 @@ export default function AnalyticsPage() {
                   <th className="w-8 px-4 py-3" aria-hidden />
                   <th className="px-4 py-3">Date / Time</th>
                   <th className="px-4 py-3">Case Type</th>
-                  <th className="px-4 py-3">CTA</th>
+                  <th className="px-4 py-3">Outcome</th>
+                  <th className="px-4 py-3">Drop-off</th>
                 </tr>
               </thead>
               <tbody>
@@ -634,7 +687,12 @@ export default function AnalyticsPage() {
                   const ctaLabel = s.booked && s.called ? 'Booked + Called'
                     : s.booked ? 'Booked'
                     : s.called ? 'Called'
+                    : s.zeroResults ? 'No Results'
                     : '—'
+                  const ctaColor = s.bookedOrCalled ? 'font-semibold text-emerald-700'
+                    : s.zeroResults ? 'font-medium text-red-500'
+                    : 'text-slate-400'
+
                   return (
                     <Fragment key={s.sessionId}>
                       <tr
@@ -648,23 +706,33 @@ export default function AnalyticsPage() {
                         </td>
                         <td className="px-4 py-3 text-slate-700">{formatDateTime(s.openedAt)}</td>
                         <td className="px-4 py-3 text-slate-700">{s.caseTypeName}</td>
-                        <td className={`px-4 py-3 ${s.bookedOrCalled ? 'font-semibold text-emerald-700' : 'text-slate-400'}`}>
-                          {ctaLabel}
-                        </td>
+                        <td className={`px-4 py-3 ${ctaColor}`}>{ctaLabel}</td>
+                        <td className="px-4 py-3 text-xs text-slate-500">{s.dropOffPoint}</td>
                       </tr>
                       {expanded && (
                         <tr className="border-b border-slate-100 bg-slate-50/50">
-                          <td colSpan={4} className="px-6 py-4">
+                          <td colSpan={5} className="px-6 py-4">
+                            <div className="mb-3 flex flex-wrap gap-2">
+                              {s.zeroResults && (
+                                <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700">No Results</span>
+                              )}
+                              {s.wentBack && (
+                                <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">↩ Went Back</span>
+                              )}
+                              {s.bookedOrCalled && (
+                                <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700">Converted</span>
+                              )}
+                            </div>
                             <div className="grid gap-6 md:grid-cols-2">
                               <div>
                                 <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
                                   Question Flow
                                 </h3>
-                                {s.questionEvents.length === 0 ? (
+                                {s.questionFlow.length === 0 ? (
                                   <p className="text-sm text-slate-500">No questions answered.</p>
                                 ) : (
                                   <ol className="space-y-2">
-                                    {s.questionEvents.map((e, i) => (
+                                    {s.questionFlow.map((e, i) => (
                                       <li key={e.id} className="flex items-start gap-2 text-sm">
                                         <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-medium text-indigo-700">
                                           {i + 1}

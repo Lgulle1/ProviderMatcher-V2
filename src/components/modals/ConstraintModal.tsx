@@ -363,26 +363,30 @@ export default function ConstraintModal({
                 <p className="mt-1 text-xs text-slate-500">JSONB field name, e.g. sports_only</p>
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Yes Button Label</label>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Option 1 Label</label>
                 <input
                   type="text"
                   value={formData.yes_label}
                   onChange={(e) => setFormData((f) => ({ ...f, yes_label: e.target.value }))}
+                  placeholder="e.g. Yes, it was a sports injury"
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                 />
+                <p className="mt-1 text-xs text-slate-500">What the patient sees on the first answer button</p>
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">No Button Label</label>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Option 2 Label</label>
                 <input
                   type="text"
                   value={formData.no_label}
                   onChange={(e) => setFormData((f) => ({ ...f, no_label: e.target.value }))}
+                  placeholder="e.g. No, it wasn't a sports injury"
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                 />
+                <p className="mt-1 text-xs text-slate-500">What the patient sees on the second answer button</p>
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-700">
-                  When patient clicks {formData.yes_label.trim() || 'Yes'}, show:
+                  When patient clicks "{formData.yes_label.trim() || 'Yes'}", show:
                 </label>
                 <select
                   value={formData.yes_maps_to}
@@ -391,14 +395,14 @@ export default function ConstraintModal({
                   }
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                 >
-                  <option value="both">All providers</option>
-                  <option value="1">Only value=1</option>
-                  <option value="0">Only value=0</option>
+                  <option value="both">All providers (ignore this filter)</option>
+                  <option value="1">Only providers where {formData.mapped_key.trim() || 'this field'} = 1 (flag is ON)</option>
+                  <option value="0">Only providers where {formData.mapped_key.trim() || 'this field'} = 0 (flag is OFF)</option>
                 </select>
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-700">
-                  When patient clicks {formData.no_label.trim() || 'No'}, show:
+                  When patient clicks "{formData.no_label.trim() || 'No'}", show:
                 </label>
                 <select
                   value={formData.no_maps_to}
@@ -407,9 +411,9 @@ export default function ConstraintModal({
                   }
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                 >
-                  <option value="both">All providers</option>
-                  <option value="1">Only value=1</option>
-                  <option value="0">Only value=0</option>
+                  <option value="both">All providers (ignore this filter)</option>
+                  <option value="1">Only providers where {formData.mapped_key.trim() || 'this field'} = 1 (flag is ON)</option>
+                  <option value="0">Only providers where {formData.mapped_key.trim() || 'this field'} = 0 (flag is OFF)</option>
                 </select>
               </div>
               <div className="flex justify-between pt-2">
@@ -581,12 +585,29 @@ export default function ConstraintModal({
                 />
               )}
 
-              <div>
-                <p className="mb-1 text-xs font-medium text-slate-600">Stored in offerings.constraints as:</p>
-                <pre className="overflow-x-auto rounded-lg bg-slate-900 p-3 text-xs text-slate-100">
-                  {previewJsonExample(type, formData)}
-                </pre>
-              </div>
+              {type === 'binary' && (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-1.5">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Logic Summary</p>
+                  <p className="text-sm text-slate-700">
+                    <span className="font-medium text-indigo-700">"{formData.yes_label.trim() || 'Yes'}"</span>
+                    {' → '}
+                    {formData.yes_maps_to === 'both'
+                      ? 'Show all providers (filter ignored)'
+                      : formData.yes_maps_to === '1'
+                      ? `Only show providers where ${formData.mapped_key.trim() || 'this field'} = 1`
+                      : `Only show providers where ${formData.mapped_key.trim() || 'this field'} = 0`}
+                  </p>
+                  <p className="text-sm text-slate-700">
+                    <span className="font-medium text-indigo-700">"{formData.no_label.trim() || 'No'}"</span>
+                    {' → '}
+                    {formData.no_maps_to === 'both'
+                      ? 'Show all providers (filter ignored)'
+                      : formData.no_maps_to === '1'
+                      ? `Only show providers where ${formData.mapped_key.trim() || 'this field'} = 1`
+                      : `Only show providers where ${formData.mapped_key.trim() || 'this field'} = 0`}
+                  </p>
+                </div>
+              )}
 
               {error ? (
                 <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>

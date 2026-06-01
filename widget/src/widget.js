@@ -789,25 +789,81 @@
       var config = this.data.config || {}
       var div = document.createElement('div')
       div.className = 'pm-fallback'
-      var msg = document.createElement('div')
-      msg.className = 'pm-fb-msg'
-      msg.textContent =
-        config.fallback_message || "We couldn't find a match for your criteria."
-      div.appendChild(msg)
+
+      var heading = document.createElement('div')
+      heading.style.cssText = 'font-size:18px;font-weight:700;color:#1e293b;margin-bottom:12px;'
+      heading.textContent = 'No results found'
+      div.appendChild(heading)
+
+      var answersList = document.createElement('div')
+      answersList.style.cssText =
+        'text-align:left;margin-bottom:16px;padding:12px;background:#f8fafc;border-radius:10px;'
+      var seq = this.getQuestionSequence()
+      var hasAnswers = false
+      seq.forEach(function (q) {
+        if (!Object.prototype.hasOwnProperty.call(self.state.answers, q.id)) return
+        hasAnswers = true
+        var value = self.state.answers[q.id]
+        var displayVal = ''
+        if (q.question_type === 'entry') {
+          var ct = (self.data.caseTypes || []).find(function (c) {
+            return c.id === value
+          })
+          displayVal = ct ? ct.name : String(value)
+        } else if (q.question_type === 'location') {
+          if (value === null) {
+            displayVal = 'No preference'
+          } else {
+            var loc = (self.data.locations || []).find(function (l) {
+              return l.id === value
+            })
+            displayVal = loc ? loc.name : String(value)
+          }
+        } else if (q.question_type === 'clinical') {
+          var constraint = self.findConstraint(q.constraint_id)
+          if (constraint && constraint.type === 'binary') {
+            if (value === 'yes') displayVal = constraint.yes_label || 'Yes'
+            else if (value === 'no') displayVal = constraint.no_label || 'No'
+            else displayVal = String(value)
+          } else {
+            displayVal = String(value)
+          }
+        } else if (q.question_type === 'provider') {
+          displayVal = value === 'yes' ? 'Yes' : value === 'no' ? 'No' : String(value)
+        } else {
+          displayVal = String(value)
+        }
+        var row = document.createElement('div')
+        row.style.cssText = 'font-size:13px;color:#475569;margin-bottom:8px;line-height:1.4;'
+        row.textContent = q.question_text + ' → ' + displayVal
+        answersList.appendChild(row)
+      })
+      if (hasAnswers) {
+        div.appendChild(answersList)
+      }
+
+      var btnWrap = document.createElement('div')
+      btnWrap.style.cssText = 'display:flex;flex-direction:column;gap:8px;'
       if (config.fallback_phone) {
-        var phone = document.createElement('div')
-        phone.className = 'pm-fb-phone'
-        phone.textContent = config.fallback_phone
-        div.appendChild(phone)
+        var callBtn = document.createElement('a')
+        callBtn.className = 'pm-book'
+        callBtn.href = 'tel:' + config.fallback_phone
+        callBtn.textContent = 'Call the office'
+        callBtn.onclick = function () {
+          self.trackEvent('call_office_clicked')
+        }
+        btnWrap.appendChild(callBtn)
       }
       var restartBtn = document.createElement('button')
       restartBtn.className = 'pm-restart'
-      restartBtn.textContent = 'Start Over'
+      restartBtn.textContent = 'Start over'
       restartBtn.onclick = function () {
+        self.trackEvent('start_over_clicked')
         self.resetState()
         self.startFlow()
       }
-      div.appendChild(restartBtn)
+      btnWrap.appendChild(restartBtn)
+      div.appendChild(btnWrap)
       body.appendChild(div)
       this.trackSession(true)
     },
