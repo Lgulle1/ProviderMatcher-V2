@@ -21,11 +21,11 @@ interface AnalyticsData {
   providers: ProviderRef[]
 }
 
-async function fetchAnalytics(): Promise<AnalyticsData> {
+async function fetchAnalytics(orgId: string): Promise<AnalyticsData> {
   const [sessionsRes, caseTypesRes, providersRes] = await Promise.all([
-    supabase.from('widget_sessions').select('*').order('created_at', { ascending: false }),
-    supabase.from('case_types').select('id, name'),
-    supabase.from('providers').select('id, name'),
+    supabase.from('widget_sessions').select('*').eq('org_id', orgId).order('created_at', { ascending: false }),
+    supabase.from('case_types').select('id, name').eq('org_id', orgId),
+    supabase.from('providers').select('id, name').eq('org_id', orgId),
   ])
 
   if (sessionsRes.error) {
@@ -121,7 +121,7 @@ export default function AnalyticsPage() {
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['analytics', orgId],
-    queryFn: fetchAnalytics,
+    queryFn: () => fetchAnalytics(orgId),
     enabled: Boolean(orgId),
   })
 

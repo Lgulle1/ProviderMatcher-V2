@@ -36,8 +36,15 @@ serve(async (req) => {
       })
     }
 
+    const { data: widget } = await supabase
+      .from('widgets')
+      .select('org_id')
+      .eq('id', body.widget_id)
+      .maybeSingle()
+
     await supabase.from('widget_sessions').insert({
       widget_id: body.widget_id,
+      org_id: widget?.org_id ?? null,
       session_id: body.session_id || crypto.randomUUID(),
       case_type_id: body.case_type_id ?? null,
       answers: body.answers || {},

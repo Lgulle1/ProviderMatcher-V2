@@ -168,6 +168,7 @@ export interface ImportHistory {
 export interface WidgetSession {
   id: string
   widget_id: string | null
+  org_id: string | null
   session_id: string
   case_type_id: string | null
   answers: Record<string, any>
