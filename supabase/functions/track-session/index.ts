@@ -50,6 +50,7 @@ serve(async (req) => {
         step_index: body.step_index ?? null,
         question_id: body.question_id ?? null,
         question_text: body.question_text ?? null,
+        answer_text: body.answer_text ?? null,
       })
 
       if (error) {
@@ -67,16 +68,31 @@ serve(async (req) => {
       .eq('id', body.widget_id)
       .maybeSingle()
 
-    await supabase.from('widget_sessions').insert({
+    const sessionId = body.session_id || crypto.randomUUID()
+
+    // Check if a row already exists for this session (e.g. after a restart in the same session)
+    const { data: existing } = await supabase
+      .from('widget_sessions')
+      .select('id')
+      .eq('session_id', sessionId)
+      .maybeSingle()
+
+    const payload = {
       widget_id: body.widget_id,
       org_id: widget?.org_id ?? null,
-      session_id: body.session_id || crypto.randomUUID(),
+      session_id: sessionId,
       case_type_id: body.case_type_id ?? null,
       answers: body.answers || {},
       results_count: body.results_count ?? 0,
       zero_results: body.zero_results === true,
       providers_clicked: body.providers_clicked || [],
-    })
+    }
+
+    if (existing) {
+      await supabase.from('widget_sessions').update(payload).eq('id', existing.id)
+    } else {
+      await supabase.from('widget_sessions').insert(payload)
+    }
 
     return new Response(JSON.stringify({ ok: true }), {
       headers: { ...cors, 'Content-Type': 'application/json' },

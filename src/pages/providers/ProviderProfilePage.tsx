@@ -229,6 +229,14 @@ export default function ProviderProfilePage() {
     return map
   }, [providerLocations])
 
+  const phoneLinkBaselineByLocationId = useMemo(() => {
+    const map = new Map<string, string>()
+    providerLocations.forEach((entry) => {
+      map.set(entry.location_id, (entry.phone ?? '').trim())
+    })
+    return map
+  }, [providerLocations])
+
   const caseTypeNameById = useMemo(() => {
     const map = new Map<string, string>()
     orgCaseTypes.forEach((caseType) => map.set(caseType.id, caseType.name))
@@ -262,8 +270,16 @@ export default function ProviderProfilePage() {
     })
   }, [offeringLocationIds, bookingLinks, bookingLinkBaselineByLocationId])
 
+  const hasPhoneLinkChanges = useMemo(() => {
+    return offeringLocationIds.some((locationId) => {
+      const current = (phoneLinks[locationId] ?? '').trim()
+      const baseline = phoneLinkBaselineByLocationId.get(locationId) ?? ''
+      return current !== baseline
+    })
+  }, [offeringLocationIds, phoneLinks, phoneLinkBaselineByLocationId])
+
   const hasCategoryChanges = !sameIds(categoryIds, originalCategoryIds)
-  const canSave = formState.isDirty || hasCategoryChanges || hasBookingLinkChanges
+  const canSave = formState.isDirty || hasCategoryChanges || hasBookingLinkChanges || hasPhoneLinkChanges
 
   const colors = [
     'bg-indigo-500',

@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   BarChart3,
@@ -25,6 +25,7 @@ interface SessionEvent {
   step_index: number | null
   question_id: string | null
   question_text: string | null
+  answer_text: string | null
   created_at: string
 }
 
@@ -92,56 +93,132 @@ function formatDateTime(iso: string): string {
 // ─── Line Chart ───────────────────────────────────────────────────────────────
 
 function LineChart({ counts, labels, total }: { counts: number[]; labels: string[]; total: number }) {
+  const [hovered, setHovered] = useState<number | null>(null)
+
   const width = 640
-  const height = 160
-  const padL = 8, padR = 8, padT = 12, padB = 28
+  const height = 140
+  const padL = 0, padR = 0, padT = 12, padB = 0
   const w = width - padL - padR
   const h = height - padT - padB
   const max = Math.max(...counts, 1)
+
   const pts = counts.map((c, i) => ({
     x: padL + (counts.length > 1 ? (i / (counts.length - 1)) * w : w / 2),
     y: padT + h - (c / max) * h,
     c,
   }))
+
   const pathD = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')
   const areaD = pts.length > 1
     ? `${pathD} L${pts[pts.length - 1].x},${padT + h} L${pts[0].x},${padT + h} Z`
     : ''
-  const labelEvery = Math.ceil(counts.length / 8)
+
+  // At most 7 x-axis labels, always first + last
+  const labelIndices = new Set<number>()
+  labelIndices.add(0)
+  labelIndices.add(counts.length - 1)
+  const slots = Math.min(5, counts.length - 2)
+  for (let s = 1; s <= slots; s++) {
+    labelIndices.add(Math.round(s * (counts.length - 1) / (slots + 1)))
+  }
+
+  // % position of each label index along the x axis (for HTML overlay)
+  const labelItems = Array.from(labelIndices)
+    .sort((a, b) => a - b)
+    .map(i => ({ i, pct: counts.length > 1 ? (i / (counts.length - 1)) * 100 : 50 }))
+
+  const hov = hovered !== null ? pts[hovered] : null
+  // tooltip x as % for HTML positioning
+  const hovPct = hovered !== null && counts.length > 1 ? (hovered / (counts.length - 1)) * 100 : null
 
   return (
     <div>
-      <div className="mb-2 flex items-baseline gap-2">
+      <div className="mb-3 flex items-baseline gap-2">
         <span className="text-2xl font-bold text-slate-900">{total.toLocaleString()}</span>
         <span className="text-sm text-slate-500">total opens</span>
       </div>
-      <svg viewBox={`0 0 ${width} ${height}`} className="w-full" role="img" aria-label="Sessions over time">
-        <defs>
-          <linearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#6366f1" />
-            <stop offset="100%" stopColor="#6366f1" stopOpacity={0} />
-          </linearGradient>
-        </defs>
-        {areaD && <path d={areaD} fill="url(#lineGrad)" opacity={0.15} />}
-        {pts.length > 1 && (
-          <path d={pathD} fill="none" stroke="#6366f1" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+
+      {/* Chart + x-axis wrapper */}
+      <div className="relative" onMouseLeave={() => setHovered(null)}>
+
+        {/* SVG — line, area, dots, hit areas only (no text) */}
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
+          className="w-full"
+          style={{ display: 'block', overflow: 'visible' }}
+          aria-label="Sessions over time"
+        >
+          <defs>
+            <linearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#6366f1" />
+              <stop offset="100%" stopColor="#6366f1" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+
+          {areaD && <path d={areaD} fill="url(#lineGrad)" opacity={0.15} />}
+          {pts.length > 1 && (
+            <path d={pathD} fill="none" stroke="#6366f1" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+          )}
+
+          {/* Hover guide line */}
+          {hov && (
+            <line x1={hov.x} y1={padT} x2={hov.x} y2={padT + h} stroke="#6366f1" strokeWidth={1} strokeDasharray="3 3" opacity={0.4} />
+          )}
+
+          {/* Invisible hit strips */}
+          {pts.map((p, i) => {
+            const prev = pts[i - 1]
+            const next = pts[i + 1]
+            const left = prev ? (prev.x + p.x) / 2 : 0
+            const right = next ? (p.x + next.x) / 2 : width
+            return (
+              <rect key={`hit-${i}`} x={left} y={padT} width={right - left} height={h}
+                fill="transparent" onMouseEnter={() => setHovered(i)} />
+            )
+          })}
+
+          {/* Dots */}
+          {pts.map((p, i) => (
+            <circle key={`dot-${i}`} cx={p.x} cy={p.y}
+              r={hovered === i ? 5 : p.c > 0 ? 3 : 2}
+              fill={p.c > 0 ? '#6366f1' : '#cbd5e1'}
+              stroke={hovered === i ? '#fff' : 'none'}
+              strokeWidth={2}
+            />
+          ))}
+        </svg>
+
+        {/* X-axis labels — HTML so they use app font sizing */}
+        <div className="relative mt-1 h-4">
+          {labelItems.map(({ i, pct }) => (
+            <span
+              key={i}
+              className="absolute -translate-x-1/2 text-xs text-slate-400 first:translate-x-0 last:translate-x-[-100%]"
+              style={{ left: `${pct}%` }}
+            >
+              {labels[i]}
+            </span>
+          ))}
+        </div>
+
+        {/* Tooltip — HTML overlay */}
+        {hov !== null && hovered !== null && hovPct !== null && (
+          <div
+            className="pointer-events-none absolute -top-1 z-10 -translate-x-1/2 -translate-y-full rounded-lg bg-slate-800 px-3 py-2 text-center shadow-lg"
+            style={{ left: `${hovPct}%` }}
+          >
+            <p className="text-xs text-slate-400">{labels[hovered]}</p>
+            <p className="text-sm font-semibold text-white">{hov.c.toLocaleString()} opens</p>
+          </div>
         )}
-        {pts.map((p, i) => (
-          <g key={i}>
-            <circle cx={p.x} cy={p.y} r={p.c > 0 ? 3 : 2} fill={p.c > 0 ? '#6366f1' : '#cbd5e1'} />
-            {(i % labelEvery === 0 || i === counts.length - 1) && (
-              <text x={p.x} y={height - 6} textAnchor="middle" fontSize={9} fill="#94a3b8">{labels[i]}</text>
-            )}
-          </g>
-        ))}
-      </svg>
+      </div>
     </div>
   )
 }
 
 // ─── Funnel Chart ─────────────────────────────────────────────────────────────
 
-type FunnelMode = 'combined' | 'booking' | 'call'
+type FunnelMode = 'combined' | 'booking' | 'call' | 'no-results'
 
 interface FunnelStep {
   label: string
@@ -159,19 +236,19 @@ function FunnelChart({ steps, mode, onModeChange }: {
   const max = steps[0]?.count ?? 1
   return (
     <div>
-      <div className="mb-4 flex gap-1.5">
-        {(['combined', 'booking', 'call'] as FunnelMode[]).map(m => (
+      <div className="mb-4 flex flex-wrap gap-1.5">
+        {(['combined', 'booking', 'call', 'no-results'] as FunnelMode[]).map(m => (
           <button
             key={m}
             type="button"
             onClick={() => onModeChange(m)}
             className={`rounded-md border px-3 py-1 text-xs font-medium transition-colors ${
               mode === m
-                ? 'border-indigo-600 bg-indigo-600 text-white'
-                : 'border-slate-300 bg-white text-slate-600 hover:border-indigo-400'
+                ? m === 'no-results' ? 'border-red-500 bg-red-500 text-white' : 'border-indigo-600 bg-indigo-600 text-white'
+                : m === 'no-results' ? 'border-red-200 bg-white text-red-600 hover:border-red-400' : 'border-slate-300 bg-white text-slate-600 hover:border-indigo-400'
             }`}
           >
-            {m === 'combined' ? 'Combined' : m === 'booking' ? 'Book Only' : 'Call Only'}
+            {m === 'combined' ? 'All CTAs' : m === 'booking' ? 'Book Only' : m === 'call' ? 'Call Only' : 'No Results'}
           </button>
         ))}
       </div>
@@ -221,6 +298,7 @@ export default function AnalyticsPage() {
   const [customEnd, setCustomEnd] = useState('')
   const [funnelMode, setFunnelMode] = useState<FunnelMode>('combined')
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null)
+  const [showAllSessions, setShowAllSessions] = useState(false)
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['analytics-v2', orgId],
@@ -275,6 +353,13 @@ export default function AnalyticsPage() {
     return m
   }, [data?.providers])
 
+  // Deduplicated sessions — newest row wins when duplicate session_ids exist
+  const dedupedSessions = useMemo(() => {
+    const seen = new Map<string, WidgetSession>()
+    filteredSessions.forEach(s => { if (!seen.has(s.session_id)) seen.set(s.session_id, s) })
+    return Array.from(seen.values())
+  }, [filteredSessions])
+
   // ── Executive summary
   const summary = useMemo(() => {
     const opens = new Set(filteredEvents.filter(e => e.event_type === 'widget_opened').map(e => e.session_id)).size
@@ -286,7 +371,7 @@ export default function AnalyticsPage() {
       ...filteredEvents.filter(e => e.event_type === 'call_office_clicked').map(e => e.session_id),
     ])
     const ctas = new Set([...bookingIds, ...callIds]).size
-    const zeroResults = filteredSessions.filter(s => s.zero_results === true).length
+    const zeroResults = dedupedSessions.filter(s => s.zero_results === true).length
     return {
       opens, results,
       bookings: bookingIds.size,
@@ -297,8 +382,33 @@ export default function AnalyticsPage() {
     }
   }, [filteredEvents, filteredSessions])
 
+  // ── No Results Pipeline (must be before funnelSteps)
+  const noResultsPipeline = useMemo(() => {
+    const total = dedupedSessions.filter(s => s.zero_results === true).length
+    const called = new Set(filteredEvents.filter(e => e.event_type === 'call_office_clicked').map(e => e.session_id)).size
+    const restarted = new Set(filteredEvents.filter(e => e.event_type === 'start_over_clicked').map(e => e.session_id)).size
+    const restartedSessionIds = new Set(filteredEvents.filter(e => e.event_type === 'start_over_clicked').map(e => e.session_id))
+    const recoveredIds = new Set(filteredEvents.filter(e =>
+      (e.event_type === 'booking_clicked' || e.event_type === 'call_clicked') && restartedSessionIds.has(e.session_id)
+    ).map(e => e.session_id))
+    const recovered = recoveredIds.size
+    const pct = (n: number) => total > 0 ? Math.round((n / total) * 100) : 0
+    return { total, called, restarted, recovered, pct }
+  }, [filteredEvents, filteredSessions])
+
   // ── Funnel steps
   const funnelSteps = useMemo((): FunnelStep[] => {
+    // No Results mode — show the no-results pipeline as its own funnel
+    if (funnelMode === 'no-results') {
+      const total = noResultsPipeline.total
+      const pct = (n: number) => total > 0 ? Math.round((n / total) * 100) : 0
+      return [
+        { label: 'Got No Results', count: total, pct: 100, isZeroResults: true },
+        { label: 'Called the Office', count: noResultsPipeline.called, pct: pct(noResultsPipeline.called) },
+        { label: 'Started Over', count: noResultsPipeline.restarted, pct: pct(noResultsPipeline.restarted) },
+        { label: 'Recovered (restarted → converted)', count: noResultsPipeline.recovered, pct: pct(noResultsPipeline.recovered), isCTA: true },
+      ]
+    }
     // Use total unique sessions across ALL events as the baseline — fixes the 129% bug
     // where question events outnumber widget_opened events due to timing/back navigation
     const base = new Set(filteredEvents.map(e => e.session_id)).size
@@ -316,7 +426,11 @@ export default function AnalyticsPage() {
     const questionSteps = Array.from(stepMap.entries()).sort((a, b) => a[0] - b[0])
 
     const openCount = countEvent('widget_opened')
+    const caseTypeCount = countEvent('case_type_selected')
     const steps: FunnelStep[] = [{ label: 'Widget Opened', count: openCount, pct: pct(openCount) }]
+    if (caseTypeCount > 0) {
+      steps.push({ label: 'Case Type Selected', count: caseTypeCount, pct: pct(caseTypeCount) })
+    }
 
     questionSteps.forEach(([idx, text]) => {
       const count = countStep(idx)
@@ -340,22 +454,7 @@ export default function AnalyticsPage() {
     }
 
     return steps
-  }, [filteredEvents, filteredSessions, funnelMode])
-
-  // ── No Results Pipeline
-  const noResultsPipeline = useMemo(() => {
-    const total = filteredSessions.filter(s => s.zero_results === true).length
-    const called = new Set(filteredEvents.filter(e => e.event_type === 'call_office_clicked').map(e => e.session_id)).size
-    const restarted = new Set(filteredEvents.filter(e => e.event_type === 'start_over_clicked').map(e => e.session_id)).size
-    // Sessions that restarted and then eventually converted
-    const restartedSessionIds = new Set(filteredEvents.filter(e => e.event_type === 'start_over_clicked').map(e => e.session_id))
-    const recoveredIds = new Set(filteredEvents.filter(e =>
-      (e.event_type === 'booking_clicked' || e.event_type === 'call_clicked') && restartedSessionIds.has(e.session_id)
-    ).map(e => e.session_id))
-    const recovered = recoveredIds.size
-    const pct = (n: number) => total > 0 ? Math.round((n / total) * 100) : 0
-    return { total, called, restarted, recovered, pct }
-  }, [filteredEvents, filteredSessions])
+  }, [filteredEvents, filteredSessions, funnelMode, noResultsPipeline])
 
   // ── Sessions over time
   const sessionsOverTime = useMemo(() => {
@@ -381,9 +480,9 @@ export default function AnalyticsPage() {
 
   // ── Sessions by case type
   const sessionsByCaseType = useMemo(() => {
-    const total = filteredSessions.length
+    const total = dedupedSessions.length
     const counts = new Map<string, number>()
-    filteredSessions.forEach(s => {
+    dedupedSessions.forEach(s => {
       const id = s.case_type_id ?? '__none__'
       counts.set(id, (counts.get(id) ?? 0) + 1)
     })
@@ -394,19 +493,19 @@ export default function AnalyticsPage() {
         pct: total > 0 ? Math.round((count / total) * 100) : 0,
       }))
       .sort((a, b) => b.count - a.count)
-  }, [filteredSessions, caseTypeNameById])
+  }, [dedupedSessions, caseTypeNameById])
 
   // ── Providers by clicks
   const providersByClicks = useMemo(() => {
     const counts = new Map<string, number>()
-    filteredSessions.forEach(s => {
+    dedupedSessions.forEach(s => {
       (s.providers_clicked ?? []).forEach(pid => counts.set(pid, (counts.get(pid) ?? 0) + 1))
     })
     return Array.from(counts.entries())
       .map(([id, clicks]) => ({ id, clicks, name: providerNameById.get(id) ?? 'Unknown' }))
       .sort((a, b) => b.clicks - a.clicks)
       .slice(0, 10)
-  }, [filteredSessions, providerNameById])
+  }, [dedupedSessions, providerNameById])
 
   // ── Session log
   const sessionLog = useMemo(() => {
@@ -415,9 +514,13 @@ export default function AnalyticsPage() {
       if (!map.has(e.session_id)) map.set(e.session_id, { events: [] })
       map.get(e.session_id)!.events.push(e)
     })
+    // Sessions are ordered newest-first; only set once so older duplicates don't overwrite
     filteredSessions.forEach(s => {
-      if (map.has(s.session_id)) map.get(s.session_id)!.session = s
-      else map.set(s.session_id, { events: [], session: s })
+      if (map.has(s.session_id)) {
+        if (!map.get(s.session_id)!.session) map.get(s.session_id)!.session = s
+      } else {
+        map.set(s.session_id, { events: [], session: s })
+      }
     })
     return Array.from(map.entries())
       .map(([sessionId, d]) => {
@@ -437,7 +540,7 @@ export default function AnalyticsPage() {
         const stepEvents = sortedEvents.filter(e => e.event_type === 'question_answered' && e.step_index != null)
         let wentBack = false
         for (let i = 1; i < stepEvents.length; i++) {
-          if ((stepEvents[i].step_index ?? 0) <= (stepEvents[i - 1].step_index ?? 0)) {
+          if ((stepEvents[i].step_index ?? 0) < (stepEvents[i - 1].step_index ?? 0)) {
             wentBack = true
             break
           }
@@ -481,355 +584,297 @@ export default function AnalyticsPage() {
   if (!orgId || isLoading) return <p className="p-8 text-sm text-slate-500">Loading analytics…</p>
   if (error) return <p className="p-8 text-sm text-red-600">{error instanceof Error ? error.message : 'Error loading analytics.'}</p>
 
+  const visibleSessions = showAllSessions ? sessionLog : sessionLog.slice(0, 10)
+
   return (
     <div>
-      {/* Header */}
-      <section className="mb-8">
-        <h1 className="text-2xl font-bold text-slate-900">Analytics</h1>
-        <p className="mt-1 text-slate-500">{orgName}</p>
-      </section>
-
-      {/* Filters */}
-      <div className="mb-8 flex flex-wrap items-center gap-3">
-        <select
-          value={selectedWidgetId}
-          onChange={e => setSelectedWidgetId(e.target.value)}
-          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 shadow-sm focus:border-indigo-500 focus:outline-none"
-        >
-          <option value="all">All Widgets</option>
-          {(data?.widgets ?? []).map(w => (
-            <option key={w.id} value={w.id}>{w.name}</option>
-          ))}
-        </select>
-
-        <div className="flex items-center gap-1">
-          {(['7d', '30d', '90d'] as const).map(p => (
-            <button
-              key={p}
-              type="button"
-              onClick={() => setDatePreset(p)}
+      {/* Header + Filters in one row */}
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Analytics</h1>
+          <p className="mt-0.5 text-sm text-slate-500">{orgName}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={selectedWidgetId}
+            onChange={e => setSelectedWidgetId(e.target.value)}
+            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 shadow-sm focus:border-indigo-500 focus:outline-none"
+          >
+            <option value="all">All Widgets</option>
+            {(data?.widgets ?? []).map(w => (
+              <option key={w.id} value={w.id}>{w.name}</option>
+            ))}
+          </select>
+          <div className="flex items-center gap-1">
+            {(['7d', '30d', '90d'] as const).map(p => (
+              <button key={p} type="button" onClick={() => setDatePreset(p)}
+                className={`rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
+                  datePreset === p ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-300 bg-white text-slate-600 hover:border-indigo-400'
+                }`}
+              >
+                {p === '7d' ? '7d' : p === '30d' ? '30d' : '90d'}
+              </button>
+            ))}
+            <button type="button" onClick={() => setDatePreset('custom')}
               className={`rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
-                datePreset === p
-                  ? 'border-indigo-600 bg-indigo-600 text-white'
-                  : 'border-slate-300 bg-white text-slate-600 hover:border-indigo-400'
+                datePreset === 'custom' ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-300 bg-white text-slate-600 hover:border-indigo-400'
               }`}
             >
-              {p === '7d' ? 'Last 7d' : p === '30d' ? 'Last 30d' : 'Last 90d'}
+              Custom
             </button>
-          ))}
-          <button
-            type="button"
-            onClick={() => setDatePreset('custom')}
-            className={`rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
-              datePreset === 'custom'
-                ? 'border-indigo-600 bg-indigo-600 text-white'
-                : 'border-slate-300 bg-white text-slate-600 hover:border-indigo-400'
-            }`}
-          >
-            Custom
-          </button>
-        </div>
-
-        {datePreset === 'custom' && (
-          <div className="flex items-center gap-2">
-            <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)}
-              className="rounded-md border border-slate-300 px-2 py-1 text-sm" />
-            <span className="text-sm text-slate-400">to</span>
-            <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)}
-              className="rounded-md border border-slate-300 px-2 py-1 text-sm" />
           </div>
-        )}
+          {datePreset === 'custom' && (
+            <div className="flex items-center gap-2">
+              <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} className="rounded-md border border-slate-300 px-2 py-1 text-sm" />
+              <span className="text-sm text-slate-400">to</span>
+              <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} className="rounded-md border border-slate-300 px-2 py-1 text-sm" />
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Executive Summary */}
-      <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-7">
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50">
-            <BarChart3 className="h-4 w-4 text-indigo-600" aria-hidden />
+      {/* Summary Cards — compact */}
+      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+        {/* Opens */}
+        <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-50">
+            <BarChart3 className="h-3.5 w-3.5 text-indigo-600" aria-hidden />
           </div>
-          <p className="mt-3 text-2xl font-bold text-slate-900">{summary.opens.toLocaleString()}</p>
-          <p className="mt-0.5 text-xs text-slate-500">Widget Opens</p>
+          <p className="mt-2 text-xl font-bold text-slate-900">{summary.opens.toLocaleString()}</p>
+          <p className="mt-0.5 text-xs text-slate-500">Opens</p>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50">
-            <Users className="h-4 w-4 text-emerald-600" aria-hidden />
+        {/* Results */}
+        <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50">
+            <Users className="h-3.5 w-3.5 text-emerald-600" aria-hidden />
           </div>
-          <p className="mt-3 text-2xl font-bold text-slate-900">{summary.results.toLocaleString()}</p>
+          <p className="mt-2 text-xl font-bold text-slate-900">{summary.results.toLocaleString()}</p>
           <p className="mt-0.5 text-xs text-slate-500">Results Shown</p>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-50">
-            <MousePointerClick className="h-4 w-4 text-violet-600" aria-hidden />
+        {/* Bookings */}
+        <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50">
+            <BookOpen className="h-3.5 w-3.5 text-blue-600" aria-hidden />
           </div>
-          <p className="mt-3 text-2xl font-bold text-slate-900">{summary.ctas.toLocaleString()}</p>
-          <p className="mt-0.5 text-xs text-slate-500">Total CTAs</p>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50">
-            <BookOpen className="h-4 w-4 text-blue-600" aria-hidden />
-          </div>
-          <p className="mt-3 text-2xl font-bold text-slate-900">{summary.bookings.toLocaleString()}</p>
+          <p className="mt-2 text-xl font-bold text-slate-900">{summary.bookings.toLocaleString()}</p>
           <p className="mt-0.5 text-xs text-slate-500">Bookings</p>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-50">
-            <Phone className="h-4 w-4 text-amber-600" aria-hidden />
+        {/* Calls */}
+        <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-50">
+            <Phone className="h-3.5 w-3.5 text-amber-600" aria-hidden />
           </div>
-          <p className="mt-3 text-2xl font-bold text-slate-900">{summary.calls.toLocaleString()}</p>
+          <p className="mt-2 text-xl font-bold text-slate-900">{summary.calls.toLocaleString()}</p>
           <p className="mt-0.5 text-xs text-slate-500">Calls</p>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-50">
-            <TrendingUp className="h-4 w-4 text-rose-600" aria-hidden />
+        {/* CTAs */}
+        <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-50">
+            <MousePointerClick className="h-3.5 w-3.5 text-violet-600" aria-hidden />
           </div>
-          <p className="mt-3 text-2xl font-bold text-slate-900">{summary.conversionRate}%</p>
+          <p className="mt-2 text-xl font-bold text-slate-900">{summary.ctas.toLocaleString()}</p>
+          <p className="mt-0.5 text-xs text-slate-500">Total CTAs</p>
+        </div>
+        {/* Conversion */}
+        <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-50">
+            <TrendingUp className="h-3.5 w-3.5 text-rose-600" aria-hidden />
+          </div>
+          <p className="mt-2 text-xl font-bold text-slate-900">{summary.conversionRate}%</p>
           <p className="mt-0.5 text-xs text-slate-500">Conversion</p>
         </div>
-        <div className="rounded-xl border border-red-100 bg-red-50 p-4 shadow-sm">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-100">
-            <TrendingDown className="h-4 w-4 text-red-500" aria-hidden />
+        {/* No Results */}
+        <div className="rounded-xl border border-red-100 bg-red-50 p-3 shadow-sm">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-100">
+            <TrendingDown className="h-3.5 w-3.5 text-red-500" aria-hidden />
           </div>
-          <p className="mt-3 text-2xl font-bold text-red-700">{summary.zeroResults.toLocaleString()}</p>
+          <p className="mt-2 text-xl font-bold text-red-700">{summary.zeroResults.toLocaleString()}</p>
           <p className="mt-0.5 text-xs text-red-500">No Results</p>
         </div>
       </div>
 
-      {/* Funnel + Sessions Over Time */}
-      <div className="mb-8 grid gap-8 lg:grid-cols-2">
-        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 px-6 py-4">
-            <h2 className="font-semibold text-slate-900">Conversion Funnel</h2>
-          </div>
-          <div className="px-6 py-4">
-            {summary.opens === 0 ? (
-              <p className="py-8 text-center text-sm text-slate-500">
-                No funnel data yet. Open the widget on your live site to start tracking.
-              </p>
-            ) : (
-              <FunnelChart steps={funnelSteps} mode={funnelMode} onModeChange={setFunnelMode} />
-            )}
-          </div>
-        </section>
+      {/* Funnel — full width */}
+      <section className="mb-6 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 px-6 py-4">
+          <h2 className="font-semibold text-slate-900">Funnel</h2>
+          <p className="mt-0.5 text-xs text-slate-500">Select a view to see where users drop off</p>
+        </div>
+        <div className="px-6 py-5">
+          {summary.opens === 0 && noResultsPipeline.total === 0 ? (
+            <p className="py-6 text-center text-sm text-slate-500">No funnel data yet.</p>
+          ) : (
+            <FunnelChart steps={funnelSteps} mode={funnelMode} onModeChange={setFunnelMode} />
+          )}
+        </div>
+      </section>
 
-        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 px-6 py-4">
-            <h2 className="font-semibold text-slate-900">Sessions Over Time</h2>
-          </div>
-          <div className="px-6 py-4">
-            <LineChart counts={sessionsOverTime.counts} labels={sessionsOverTime.labels} total={summary.opens} />
-          </div>
-        </section>
-      </div>
+      {/* Sessions Over Time — full width */}
+      <section className="mb-6 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 px-6 py-4">
+          <h2 className="font-semibold text-slate-900">Sessions Over Time</h2>
+        </div>
+        <div className="px-6 py-4">
+          <LineChart counts={sessionsOverTime.counts} labels={sessionsOverTime.labels} total={summary.opens} />
+        </div>
+      </section>
 
-      {/* No Results Pipeline */}
-      {noResultsPipeline.total > 0 && (
-        <section className="mb-8 overflow-hidden rounded-xl border border-red-200 bg-white shadow-sm">
-          <div className="border-b border-red-100 bg-red-50 px-6 py-4">
-            <h2 className="font-semibold text-red-900">No Results Pipeline</h2>
-            <p className="mt-0.5 text-xs text-red-500">Sessions that hit zero results — what happened next</p>
-          </div>
-          <div className="px-6 py-4 space-y-3">
-            {[
-              { label: 'Got No Results', count: noResultsPipeline.total, pct: 100, color: 'bg-red-400' },
-              { label: 'Called the Office', count: noResultsPipeline.called, pct: noResultsPipeline.pct(noResultsPipeline.called), color: 'bg-amber-400' },
-              { label: 'Started Over', count: noResultsPipeline.restarted, pct: noResultsPipeline.pct(noResultsPipeline.restarted), color: 'bg-blue-400' },
-              { label: 'Recovered (restarted → converted)', count: noResultsPipeline.recovered, pct: noResultsPipeline.pct(noResultsPipeline.recovered), color: 'bg-emerald-500' },
-            ].map((step, i) => (
-              <div key={i}>
-                <div className="mb-1 flex items-center justify-between text-sm">
-                  <span className="font-medium text-slate-700">{step.label}</span>
-                  <div className="flex items-center gap-3">
-                    <span className="font-semibold tabular-nums text-slate-900">{step.count.toLocaleString()}</span>
-                    <span className="w-10 text-right text-xs text-slate-500">{step.pct}%</span>
-                  </div>
-                </div>
-                <div className="h-6 w-full overflow-hidden rounded-md bg-slate-100">
-                  <div
-                    className={`h-full rounded-md transition-all duration-500 ${step.color}`}
-                    style={{ width: `${noResultsPipeline.total > 0 ? (step.count / noResultsPipeline.total) * 100 : 0}%` }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* Case Types + Providers */}
-      <div className="mb-8 grid gap-8 lg:grid-cols-2">
+      {/* Case Type + Providers — side by side (compact tables, makes sense together) */}
+      <div className="mb-6 grid gap-6 lg:grid-cols-2">
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-200 px-6 py-4">
             <h2 className="font-semibold text-slate-900">Sessions by Case Type</h2>
           </div>
           {sessionsByCaseType.length === 0 ? (
-            <p className="px-6 py-8 text-center text-sm text-slate-500">No session data yet.</p>
+            <p className="px-6 py-8 text-center text-sm text-slate-500">No data yet.</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-max text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-medium uppercase text-slate-500">
-                    <th className="px-6 py-3">Case Type</th>
-                    <th className="px-6 py-3">Sessions</th>
-                    <th className="px-6 py-3">% of Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sessionsByCaseType.map(row => (
-                    <tr key={row.id} className="border-b border-slate-100 last:border-0">
-                      <td className="px-6 py-3 font-medium text-slate-900">{row.name}</td>
-                      <td className="px-6 py-3 tabular-nums text-slate-700">{row.count}</td>
-                      <td className="px-6 py-3 tabular-nums text-slate-700">{row.pct}%</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div>
+              {sessionsByCaseType.slice(0, 10).map(row => (
+                <div key={row.id} className="border-b border-slate-100 px-6 py-3 last:border-0">
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <span className="text-sm font-medium text-slate-800">{row.name}</span>
+                    <span className="text-xs text-slate-500">{row.count} · {row.pct}%</span>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                    <div className="h-full rounded-full bg-indigo-400" style={{ width: `${row.pct}%` }} />
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </section>
 
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-200 px-6 py-4">
-            <h2 className="font-semibold text-slate-900">Most Clicked Providers</h2>
+            <h2 className="font-semibold text-slate-900">Top Providers</h2>
           </div>
           {providersByClicks.length === 0 ? (
-            <p className="px-6 py-8 text-center text-sm text-slate-500">No provider clicks yet.</p>
+            <p className="px-6 py-8 text-center text-sm text-slate-500">No clicks yet.</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-max text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-medium uppercase text-slate-500">
-                    <th className="px-6 py-3">Provider</th>
-                    <th className="px-6 py-3">Clicks</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {providersByClicks.map(row => (
-                    <tr key={row.id} className="border-b border-slate-100 last:border-0">
-                      <td className="px-6 py-3 font-medium text-slate-900">{row.name}</td>
-                      <td className="px-6 py-3 tabular-nums text-slate-700">{row.clicks}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div>
+              {providersByClicks.map((row, i) => (
+                <div key={row.id} className="flex items-center justify-between border-b border-slate-100 px-6 py-3 last:border-0">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-medium text-slate-500">{i + 1}</span>
+                    <span className="text-sm font-medium text-slate-800">{row.name}</span>
+                  </div>
+                  <span className="text-sm tabular-nums text-slate-500">{row.clicks} clicks</span>
+                </div>
+              ))}
             </div>
           )}
         </section>
       </div>
 
-      {/* Session Log */}
+      {/* Session Log — full width, collapsed by default */}
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 px-6 py-4">
-          <h2 className="font-semibold text-slate-900">Session Log</h2>
-          <p className="mt-0.5 text-xs text-slate-500">Up to 100 most recent sessions</p>
+        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+          <div>
+            <h2 className="font-semibold text-slate-900">Session Log</h2>
+            <p className="mt-0.5 text-xs text-slate-500">{sessionLog.length} sessions</p>
+          </div>
         </div>
         {sessionLog.length === 0 ? (
           <p className="px-6 py-8 text-center text-sm text-slate-500">No sessions recorded yet.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-max text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-medium uppercase text-slate-500">
-                  <th className="w-8 px-4 py-3" aria-hidden />
-                  <th className="px-4 py-3">Date / Time</th>
-                  <th className="px-4 py-3">Case Type</th>
-                  <th className="px-4 py-3">Outcome</th>
-                  <th className="px-4 py-3">Drop-off</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sessionLog.map(s => {
-                  const expanded = expandedSessionId === s.sessionId
-                  const ctaLabel = s.booked && s.called ? 'Booked + Called'
-                    : s.booked ? 'Booked'
-                    : s.called ? 'Called'
-                    : s.zeroResults ? 'No Results'
-                    : '—'
-                  const ctaColor = s.bookedOrCalled ? 'font-semibold text-emerald-700'
-                    : s.zeroResults ? 'font-medium text-red-500'
-                    : 'text-slate-400'
-
-                  return (
-                    <Fragment key={s.sessionId}>
-                      <tr
-                        className="cursor-pointer border-b border-slate-100 hover:bg-slate-50/80"
-                        onClick={() => setExpandedSessionId(expanded ? null : s.sessionId)}
-                      >
-                        <td className="px-4 py-3 text-slate-400">
-                          {expanded
-                            ? <ChevronDown className="h-4 w-4" aria-hidden />
-                            : <ChevronRight className="h-4 w-4" aria-hidden />}
-                        </td>
-                        <td className="px-4 py-3 text-slate-700">{formatDateTime(s.openedAt)}</td>
-                        <td className="px-4 py-3 text-slate-700">{s.caseTypeName}</td>
-                        <td className={`px-4 py-3 ${ctaColor}`}>{ctaLabel}</td>
-                        <td className="px-4 py-3 text-xs text-slate-500">{s.dropOffPoint}</td>
-                      </tr>
-                      {expanded && (
-                        <tr className="border-b border-slate-100 bg-slate-50/50">
-                          <td colSpan={5} className="px-6 py-4">
-                            <div className="mb-3 flex flex-wrap gap-2">
-                              {s.zeroResults && (
-                                <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700">No Results</span>
-                              )}
-                              {s.wentBack && (
-                                <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">↩ Went Back</span>
-                              )}
-                              {s.restarted && (
-                                <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-700">↺ Restarted</span>
-                              )}
-                              {s.calledFromNoResults && (
-                                <span className="rounded-full bg-orange-100 px-2.5 py-0.5 text-xs font-medium text-orange-700">Called from No Results</span>
-                              )}
-                              {s.bookedOrCalled && (
-                                <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700">Converted</span>
-                              )}
-                            </div>
-                            <div className="grid gap-6 md:grid-cols-2">
-                              <div>
-                                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                  Question Flow
-                                </h3>
-                                {s.questionFlow.length === 0 ? (
-                                  <p className="text-sm text-slate-500">No questions answered.</p>
-                                ) : (
-                                  <ol className="space-y-2">
-                                    {s.questionFlow.map((e, i) => (
-                                      <li key={e.id} className="flex items-start gap-2 text-sm">
-                                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-medium text-indigo-700">
-                                          {i + 1}
-                                        </span>
-                                        <span className="text-slate-700">{e.question_text ?? `Step ${i + 1}`}</span>
-                                      </li>
-                                    ))}
-                                  </ol>
-                                )}
-                              </div>
-                              <div>
-                                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                  Providers Clicked
-                                </h3>
-                                {s.providersClicked.length === 0 ? (
-                                  <p className="text-sm text-slate-500">None</p>
-                                ) : (
-                                  <ul className="space-y-1">
-                                    {s.providersClicked.map((pid, i) => (
-                                      <li key={i} className="text-sm text-slate-700">
-                                        {providerNameById.get(pid) ?? 'Unknown'}
-                                      </li>
-                                    ))}
-                                  </ul>
-                                )}
-                              </div>
-                            </div>
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-max text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-medium uppercase text-slate-500">
+                    <th className="w-8 px-4 py-3" aria-hidden />
+                    <th className="px-4 py-3">Date / Time</th>
+                    <th className="px-4 py-3">Case Type</th>
+                    <th className="px-4 py-3">Outcome</th>
+                    <th className="px-4 py-3">Drop-off</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleSessions.map(s => {
+                    const expanded = expandedSessionId === s.sessionId
+                    const ctaLabel = s.booked && s.called ? 'Booked + Called'
+                      : s.booked ? 'Booked'
+                      : s.called ? 'Called'
+                      : s.zeroResults ? 'No Results'
+                      : '—'
+                    const ctaColor = s.bookedOrCalled ? 'font-semibold text-emerald-700'
+                      : s.zeroResults ? 'font-medium text-red-500'
+                      : 'text-slate-400'
+                    return (
+                      <Fragment key={s.sessionId}>
+                        <tr className="cursor-pointer border-b border-slate-100 hover:bg-slate-50/80"
+                          onClick={() => setExpandedSessionId(expanded ? null : s.sessionId)}>
+                          <td className="px-4 py-3 text-slate-400">
+                            {expanded ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronRight className="h-4 w-4" aria-hidden />}
                           </td>
+                          <td className="px-4 py-3 text-slate-700">{formatDateTime(s.openedAt)}</td>
+                          <td className="px-4 py-3 text-slate-700">{s.caseTypeName}</td>
+                          <td className={`px-4 py-3 ${ctaColor}`}>{ctaLabel}</td>
+                          <td className="px-4 py-3 text-xs text-slate-500">{s.dropOffPoint}</td>
                         </tr>
-                      )}
-                    </Fragment>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+                        {expanded && (
+                          <tr className="border-b border-slate-100 bg-slate-50/50">
+                            <td colSpan={5} className="px-6 py-4">
+                              <div className="mb-3 flex flex-wrap gap-2">
+                                {s.zeroResults && <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700">No Results</span>}
+                                {s.wentBack && <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">↩ Went Back</span>}
+                                {s.restarted && <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-700">↺ Restarted</span>}
+                                {s.calledFromNoResults && <span className="rounded-full bg-orange-100 px-2.5 py-0.5 text-xs font-medium text-orange-700">Called from No Results</span>}
+                                {s.bookedOrCalled && <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700">Converted</span>}
+                              </div>
+                              <div className="grid gap-6 md:grid-cols-2">
+                                <div>
+                                  <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Question Flow</h3>
+                                  {s.questionFlow.length === 0 ? (
+                                    <p className="text-sm text-slate-500">No questions answered.</p>
+                                  ) : (
+                                    <ol className="space-y-2">
+                                      {s.questionFlow.map((e, i) => (
+                                        <li key={e.id} className="flex items-start gap-2 text-sm">
+                                          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-medium text-indigo-700">{i + 1}</span>
+                                          <span className="text-slate-700">
+                                            {e.question_text ?? `Step ${i + 1}`}
+                                            {e.answer_text && (
+                                              <span className="ml-2 rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">
+                                                {e.answer_text}
+                                              </span>
+                                            )}
+                                          </span>
+                                        </li>
+                                      ))}
+                                    </ol>
+                                  )}
+                                </div>
+                                <div>
+                                  <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Providers Clicked</h3>
+                                  {s.providersClicked.length === 0 ? (
+                                    <p className="text-sm text-slate-500">None</p>
+                                  ) : (
+                                    <ul className="space-y-1">
+                                      {s.providersClicked.map((pid, i) => (
+                                        <li key={i} className="text-sm text-slate-700">{providerNameById.get(pid) ?? 'Unknown'}</li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {sessionLog.length > 10 && (
+              <div className="border-t border-slate-100 px-6 py-3 text-center">
+                <button type="button" onClick={() => setShowAllSessions(v => !v)}
+                  className="text-sm font-medium text-indigo-600 hover:text-indigo-700">
+                  {showAllSessions ? 'Show less' : `Show all ${sessionLog.length} sessions`}
+                </button>
+              </div>
+            )}
+          </>
         )}
       </section>
     </div>

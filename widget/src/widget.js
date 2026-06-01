@@ -695,7 +695,7 @@
     handleAnswer: function (q, value, displayText) {
       var self = this
       if (q.question_type === 'clinical' || q.question_type === 'location') {
-        this.trackEvent('question_answered', this.state.currentQuestionIndex, q.id, q.question_text)
+        this.trackEvent('question_answered', this.state.currentQuestionIndex, q.id, q.question_text, displayText)
       }
       this.state.answers[q.id] = value
       if (this.state.activeOfferings.length === 0) {
@@ -1238,6 +1238,10 @@
             callBtnFallback.className = 'pm-call'
             callBtnFallback.href = 'tel:' + firstPhoneFallback.phone
             callBtnFallback.textContent = '📞 Call ' + (phoneLocsWithNumbers.length === 1 ? (firstPhoneLocFallback ? firstPhoneLocFallback.name : 'Office') : 'Office')
+            callBtnFallback.onclick = function () {
+              self.trackClick(provider.id)
+              self.trackEvent('call_clicked')
+            }
             defaultPanel.appendChild(callBtnFallback)
           } else if (phoneLocsWithNumbers.length > 1) {
             var callTriggerFallback = document.createElement('button')
@@ -1256,6 +1260,10 @@
           callBtn2.className = 'pm-call'
           callBtn2.href = 'tel:' + firstPhonePl.phone
           callBtn2.textContent = '📞 Call ' + (phoneLocsWithNumbers.length === 1 ? (firstPhoneLoc ? firstPhoneLoc.name : 'Office') : 'Office')
+          callBtn2.onclick = function () {
+            self.trackClick(provider.id)
+            self.trackEvent('call_clicked')
+          }
           defaultPanel.appendChild(callBtn2)
         } else {
           var callTrigger = document.createElement('button')
@@ -1334,11 +1342,12 @@
       return card
     },
 
-    trackEvent: function (eventType, stepIndex, questionId, questionText) {
+    trackEvent: function (eventType, stepIndex, questionId, questionText, answerText) {
       try {
         var config = (this.data && this.data.config) || {}
         fetch(SUPABASE_URL + '/functions/v1/track-session', {
           method: 'POST',
+          keepalive: true,
           headers: { 'Content-Type': 'application/json', 'apikey': supabaseAnonKey, 'Authorization': 'Bearer ' + supabaseAnonKey },
           body: JSON.stringify({
             type: 'event',
@@ -1349,6 +1358,7 @@
             step_index: stepIndex != null ? stepIndex : null,
             question_id: questionId != null ? questionId : null,
             question_text: questionText != null ? questionText : null,
+            answer_text: answerText != null ? answerText : null,
           }),
         })
       } catch (e) {
@@ -1360,6 +1370,7 @@
       try {
         await fetch(SUPABASE_URL + '/functions/v1/track-session', {
           method: 'POST',
+          keepalive: true,
           headers: { 'Content-Type': 'application/json', 'apikey': supabaseAnonKey, 'Authorization': 'Bearer ' + supabaseAnonKey },
           body: JSON.stringify({
             widget_id: this.widgetId,
@@ -1380,6 +1391,7 @@
       try {
         fetch(SUPABASE_URL + '/functions/v1/track-session', {
           method: 'POST',
+          keepalive: true,
           headers: { 'Content-Type': 'application/json', 'apikey': supabaseAnonKey, 'Authorization': 'Bearer ' + supabaseAnonKey },
           body: JSON.stringify({
             widget_id: this.widgetId,
