@@ -332,6 +332,7 @@
     },
 
     resetState: function () {
+      var existingSessionId = this.state.sessionId
       this.state = {
         phase: 'questions',
         currentQuestionIndex: 0,
@@ -343,7 +344,7 @@
         bypassResumeIndex: null,
         offeringsBeforeBypass: null,
         history: [],
-        sessionId: generateUUID(),
+        sessionId: existingSessionId,
       }
     },
 

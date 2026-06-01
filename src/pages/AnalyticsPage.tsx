@@ -280,7 +280,11 @@ export default function AnalyticsPage() {
     const opens = new Set(filteredEvents.filter(e => e.event_type === 'widget_opened').map(e => e.session_id)).size
     const results = new Set(filteredEvents.filter(e => e.event_type === 'results_shown').map(e => e.session_id)).size
     const bookingIds = new Set(filteredEvents.filter(e => e.event_type === 'booking_clicked').map(e => e.session_id))
-    const callIds = new Set(filteredEvents.filter(e => e.event_type === 'call_clicked').map(e => e.session_id))
+    // Calls = regular call clicks + calls from the no-results screen
+    const callIds = new Set([
+      ...filteredEvents.filter(e => e.event_type === 'call_clicked').map(e => e.session_id),
+      ...filteredEvents.filter(e => e.event_type === 'call_office_clicked').map(e => e.session_id),
+    ])
     const ctas = new Set([...bookingIds, ...callIds]).size
     const zeroResults = filteredSessions.filter(s => s.zero_results === true).length
     return {
@@ -337,6 +341,21 @@ export default function AnalyticsPage() {
 
     return steps
   }, [filteredEvents, filteredSessions, funnelMode])
+
+  // ── No Results Pipeline
+  const noResultsPipeline = useMemo(() => {
+    const total = filteredSessions.filter(s => s.zero_results === true).length
+    const called = new Set(filteredEvents.filter(e => e.event_type === 'call_office_clicked').map(e => e.session_id)).size
+    const restarted = new Set(filteredEvents.filter(e => e.event_type === 'start_over_clicked').map(e => e.session_id)).size
+    // Sessions that restarted and then eventually converted
+    const restartedSessionIds = new Set(filteredEvents.filter(e => e.event_type === 'start_over_clicked').map(e => e.session_id))
+    const recoveredIds = new Set(filteredEvents.filter(e =>
+      (e.event_type === 'booking_clicked' || e.event_type === 'call_clicked') && restartedSessionIds.has(e.session_id)
+    ).map(e => e.session_id))
+    const recovered = recoveredIds.size
+    const pct = (n: number) => total > 0 ? Math.round((n / total) * 100) : 0
+    return { total, called, restarted, recovered, pct }
+  }, [filteredEvents, filteredSessions])
 
   // ── Sessions over time
   const sessionsOverTime = useMemo(() => {
@@ -409,8 +428,10 @@ export default function AnalyticsPage() {
           ? (caseTypeNameById.get(d.session.case_type_id) ?? 'Unknown')
           : (caseTypeEvent?.question_text ?? '—')
         const booked = sortedEvents.some(e => e.event_type === 'booking_clicked')
-        const called = sortedEvents.some(e => e.event_type === 'call_clicked')
+        const called = sortedEvents.some(e => e.event_type === 'call_clicked' || e.event_type === 'call_office_clicked')
+        const calledFromNoResults = sortedEvents.some(e => e.event_type === 'call_office_clicked')
         const zeroResults = d.session?.zero_results === true
+        const restarted = sortedEvents.some(e => e.event_type === 'start_over_clicked')
 
         // Detect back navigation: if step_index goes backwards at any point
         const stepEvents = sortedEvents.filter(e => e.event_type === 'question_answered' && e.step_index != null)
@@ -447,7 +468,7 @@ export default function AnalyticsPage() {
         return {
           sessionId, openedAt, caseTypeName,
           booked, called, bookedOrCalled: booked || called,
-          zeroResults, wentBack, dropOffPoint,
+          zeroResults, wentBack, restarted, calledFromNoResults, dropOffPoint,
           questionFlow,
           providersClicked: d.session?.providers_clicked ?? [],
         }
@@ -600,6 +621,40 @@ export default function AnalyticsPage() {
         </section>
       </div>
 
+      {/* No Results Pipeline */}
+      {noResultsPipeline.total > 0 && (
+        <section className="mb-8 overflow-hidden rounded-xl border border-red-200 bg-white shadow-sm">
+          <div className="border-b border-red-100 bg-red-50 px-6 py-4">
+            <h2 className="font-semibold text-red-900">No Results Pipeline</h2>
+            <p className="mt-0.5 text-xs text-red-500">Sessions that hit zero results — what happened next</p>
+          </div>
+          <div className="px-6 py-4 space-y-3">
+            {[
+              { label: 'Got No Results', count: noResultsPipeline.total, pct: 100, color: 'bg-red-400' },
+              { label: 'Called the Office', count: noResultsPipeline.called, pct: noResultsPipeline.pct(noResultsPipeline.called), color: 'bg-amber-400' },
+              { label: 'Started Over', count: noResultsPipeline.restarted, pct: noResultsPipeline.pct(noResultsPipeline.restarted), color: 'bg-blue-400' },
+              { label: 'Recovered (restarted → converted)', count: noResultsPipeline.recovered, pct: noResultsPipeline.pct(noResultsPipeline.recovered), color: 'bg-emerald-500' },
+            ].map((step, i) => (
+              <div key={i}>
+                <div className="mb-1 flex items-center justify-between text-sm">
+                  <span className="font-medium text-slate-700">{step.label}</span>
+                  <div className="flex items-center gap-3">
+                    <span className="font-semibold tabular-nums text-slate-900">{step.count.toLocaleString()}</span>
+                    <span className="w-10 text-right text-xs text-slate-500">{step.pct}%</span>
+                  </div>
+                </div>
+                <div className="h-6 w-full overflow-hidden rounded-md bg-slate-100">
+                  <div
+                    className={`h-full rounded-md transition-all duration-500 ${step.color}`}
+                    style={{ width: `${noResultsPipeline.total > 0 ? (step.count / noResultsPipeline.total) * 100 : 0}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Case Types + Providers */}
       <div className="mb-8 grid gap-8 lg:grid-cols-2">
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -718,6 +773,12 @@ export default function AnalyticsPage() {
                               )}
                               {s.wentBack && (
                                 <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">↩ Went Back</span>
+                              )}
+                              {s.restarted && (
+                                <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-700">↺ Restarted</span>
+                              )}
+                              {s.calledFromNoResults && (
+                                <span className="rounded-full bg-orange-100 px-2.5 py-0.5 text-xs font-medium text-orange-700">Called from No Results</span>
                               )}
                               {s.bookedOrCalled && (
                                 <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700">Converted</span>
