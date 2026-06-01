@@ -564,9 +564,13 @@ export default function AnalyticsPage() {
         // Deduplicated question flow (last answer per step when they went back)
         const stepMap = new Map<number, SessionEvent>()
         stepEvents.forEach(e => stepMap.set(e.step_index!, e))
-        const questionFlow = Array.from(stepMap.entries())
-          .sort((a, b) => a[0] - b[0])
-          .map(([, e]) => e)
+        const caseTypeSyntheticEvent: SessionEvent | null = caseTypeEvent
+          ? { ...caseTypeEvent, question_text: 'Case Type', answer_text: caseTypeEvent.question_text }
+          : null
+        const questionFlow = [
+          ...(caseTypeSyntheticEvent ? [caseTypeSyntheticEvent] : []),
+          ...Array.from(stepMap.entries()).sort((a, b) => a[0] - b[0]).map(([, e]) => e),
+        ]
 
         return {
           sessionId, openedAt, caseTypeName,
