@@ -116,6 +116,8 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         config: {
+          widget_id: widgetId,
+          org_id: orgId,
           primary_color: widget.primary_color,
           button_text: widget.button_text,
           greeting_text: widget.greeting_text,

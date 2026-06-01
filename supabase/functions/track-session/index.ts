@@ -36,6 +36,26 @@ serve(async (req) => {
       })
     }
 
+    if (body.type === 'event') {
+      const { error } = await supabase.from('widget_session_events').insert({
+        session_id: body.session_id,
+        widget_id: body.widget_id,
+        org_id: body.org_id,
+        event_type: body.event_type,
+        step_index: body.step_index ?? null,
+        question_id: body.question_id ?? null,
+        question_text: body.question_text ?? null,
+      })
+
+      if (error) {
+        throw new Error(error.message)
+      }
+
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { ...cors, 'Content-Type': 'application/json' },
+      })
+    }
+
     const { data: widget } = await supabase
       .from('widgets')
       .select('org_id')

@@ -187,6 +187,7 @@
       this.injectStyles()
       if (config.embed_mode === 'inline') {
         this.createChatContainer()
+        this.trackEvent('widget_opened')
         this.startFlow()
       } else {
         this.createFloatingButton()
@@ -276,6 +277,7 @@
       btn.onclick = function () {
         btn.remove()
         self.createChatContainer()
+        self.trackEvent('widget_opened')
         self.startFlow()
       }
       this.shadow.appendChild(btn)
@@ -474,6 +476,7 @@
           self.state.activeOfferings = (self.data.offerings || []).filter(function (o) {
             return o.case_type_id === ct.id
           })
+          self.trackEvent('case_type_selected', null, null, ct.name)
           self.handleAnswer(q, ct.id, ct.name)
         }
         opts.appendChild(btn)
@@ -686,6 +689,9 @@
 
     handleAnswer: function (q, value, displayText) {
       var self = this
+      if (q.question_type === 'clinical' || q.question_type === 'location') {
+        this.trackEvent('question_answered', this.state.currentQuestionIndex, q.id, q.question_text)
+      }
       this.state.answers[q.id] = value
       if (this.state.activeOfferings.length === 0) {
         this.showZeroResults()
@@ -941,6 +947,7 @@
       restartBtn.onclick = function() { self.resetState(); self.startFlow(); }
       results.appendChild(restartBtn)
       body.appendChild(results)
+      this.trackEvent('results_shown')
       this.trackSession(false)
     },
 
@@ -1088,7 +1095,10 @@
           bookBtn.target = '_blank'
           bookBtn.rel = 'noopener noreferrer'
           bookBtn.textContent = 'Book at ' + (selectedLoc ? selectedLoc.name : 'Location')
-          bookBtn.onclick = function () { self.trackClick(provider.id) }
+          bookBtn.onclick = function () {
+            self.trackClick(provider.id)
+            self.trackEvent('booking_clicked')
+          }
           defaultPanel.appendChild(bookBtn)
         } else if (bookingLocsWithLinks.length && (bookingLocsWithLinks.length === 1 || bookingMode === 'simple')) {
           var firstPlFallback = bookingLocsWithLinks[0]
@@ -1100,7 +1110,10 @@
             bookBtnFallback.target = '_blank'
             bookBtnFallback.rel = 'noopener noreferrer'
             bookBtnFallback.textContent = bookingLocsWithLinks.length === 1 ? 'Book at ' + (firstLocFallback ? firstLocFallback.name : 'Location') : 'Book Now'
-            bookBtnFallback.onclick = function () { self.trackClick(provider.id) }
+            bookBtnFallback.onclick = function () {
+              self.trackClick(provider.id)
+              self.trackEvent('booking_clicked')
+            }
             defaultPanel.appendChild(bookBtnFallback)
           }
         } else if (bookingLocsWithLinks.length > 1) {
@@ -1123,7 +1136,10 @@
           bookBtn2.target = '_blank'
           bookBtn2.rel = 'noopener noreferrer'
           bookBtn2.textContent = bookingLocsWithLinks.length === 1 ? 'Book at ' + (firstLoc ? firstLoc.name : 'Location') : 'Book Now'
-          bookBtn2.onclick = function () { self.trackClick(provider.id) }
+          bookBtn2.onclick = function () {
+            self.trackClick(provider.id)
+            self.trackEvent('booking_clicked')
+          }
           defaultPanel.appendChild(bookBtn2)
         }
       } else if (bookingLocsWithLinks.length > 1) {
@@ -1151,6 +1167,7 @@
             callBtn.textContent = '📞 Call ' + (selPhoneLoc ? selPhoneLoc.name : 'Office')
             callBtn.onclick = function () {
               self.trackClick(provider.id)
+              self.trackEvent('call_clicked')
             }
             defaultPanel.appendChild(callBtn)
           } else if (phoneLocsWithNumbers.length && (phoneLocsWithNumbers.length === 1 || phoneMode === 'simple')) {
@@ -1208,7 +1225,10 @@
         btn.target = '_blank'
         btn.rel = 'noopener noreferrer'
         btn.textContent = loc ? loc.name : 'Location'
-        btn.onclick = function () { self.trackClick(provider.id) }
+        btn.onclick = function () {
+          self.trackClick(provider.id)
+          self.trackEvent('booking_clicked')
+        }
         bookSlide.appendChild(btn)
       })
       var bookBack = document.createElement('button')
@@ -1251,6 +1271,28 @@
       }
 
       return card
+    },
+
+    trackEvent: function (eventType, stepIndex, questionId, questionText) {
+      try {
+        var config = (this.data && this.data.config) || {}
+        fetch(SUPABASE_URL + '/functions/v1/track-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'event',
+            session_id: this.state.sessionId,
+            widget_id: config.widget_id,
+            org_id: config.org_id,
+            event_type: eventType,
+            step_index: stepIndex != null ? stepIndex : null,
+            question_id: questionId != null ? questionId : null,
+            question_text: questionText != null ? questionText : null,
+          }),
+        })
+      } catch (e) {
+        /* silent */
+      }
     },
 
     trackSession: async function (zeroResults) {

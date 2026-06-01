@@ -21,9 +21,18 @@ interface AnalyticsData {
   providers: ProviderRef[]
 }
 
-async function fetchAnalytics(orgId: string): Promise<AnalyticsData> {
+async function fetchAnalytics(orgId: string, selectedWidgetId: string | null): Promise<AnalyticsData> {
+  let sessionsQuery = supabase
+    .from('widget_sessions')
+    .select('*')
+    .eq('org_id', orgId)
+    .order('created_at', { ascending: false })
+  if (selectedWidgetId) {
+    sessionsQuery = sessionsQuery.eq('widget_id', selectedWidgetId)
+  }
+
   const [sessionsRes, caseTypesRes, providersRes] = await Promise.all([
-    supabase.from('widget_sessions').select('*').eq('org_id', orgId).order('created_at', { ascending: false }),
+    sessionsQuery,
     supabase.from('case_types').select('id, name').eq('org_id', orgId),
     supabase.from('providers').select('id, name').eq('org_id', orgId),
   ])
@@ -111,6 +120,91 @@ function SessionsOverTimeChart({ counts, labels }: { counts: number[]; labels: s
   )
 }
 
+interface FunnelChartProps {
+  steps: { label: string; count: number }[]
+  bookingCount: number
+  callCount: number
+  top: number
+}
+
+function FunnelChart({ steps, bookingCount, callCount, top }: FunnelChartProps) {
+  const allZero = steps.every((s) => s.count === 0)
+  const resultsShown = steps.find((s) => s.label === 'Results Shown')?.count ?? 0
+  const maxWidth = top > 0 ? top : 1
+
+  return (
+    <section className="mb-8 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-200 px-6 py-4">
+        <h2 className="font-semibold text-slate-900">Conversion funnel</h2>
+      </div>
+      {allZero ? (
+        <p className="px-6 py-8 text-center text-sm text-slate-500">No funnel data yet.</p>
+      ) : (
+        <div className="space-y-3 px-6 py-4">
+          {steps.map((step, i) => {
+            const prevCount = i > 0 ? steps[i - 1].count : step.count
+            const dropoff = i > 0 && prevCount > 0 ? Math.round((1 - step.count / prevCount) * 100) : 0
+            const widthPct = Math.max((step.count / maxWidth) * 100, step.count > 0 ? 2 : 0)
+            return (
+              <div key={`${step.label}-${i}`} className="flex items-center gap-3">
+                <div
+                  className="w-36 shrink-0 truncate text-sm font-medium text-slate-700"
+                  title={step.label}
+                >
+                  {step.label}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="h-8 overflow-hidden rounded-md bg-slate-100">
+                    <div
+                      className="h-full rounded-md bg-indigo-500 transition-all"
+                      style={{ width: `${widthPct}%` }}
+                    />
+                  </div>
+                </div>
+                <div className="w-28 shrink-0 text-right text-sm text-slate-600">
+                  <span className="font-semibold text-slate-900">{step.count}</span>
+                  {i > 0 ? <span className="text-slate-500"> · −{dropoff}%</span> : null}
+                </div>
+              </div>
+            )
+          })}
+          <div className="mt-4 grid grid-cols-1 gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2">
+            {(
+              [
+                { label: 'Booking Clicked', count: bookingCount },
+                { label: 'Call Clicked', count: callCount },
+              ] as const
+            ).map((item) => {
+              const pct = resultsShown > 0 ? Math.round((item.count / resultsShown) * 100) : 0
+              const widthPct = Math.max(
+                (resultsShown > 0 ? item.count / resultsShown : 0) * 100,
+                item.count > 0 ? 2 : 0
+              )
+              return (
+                <div key={item.label}>
+                  <div className="mb-1 flex items-center justify-between text-sm">
+                    <span className="font-medium text-slate-700">{item.label}</span>
+                    <span className="text-slate-600">
+                      <span className="font-semibold text-slate-900">{item.count}</span>
+                      <span className="text-slate-500"> · {pct}% of results</span>
+                    </span>
+                  </div>
+                  <div className="h-6 overflow-hidden rounded-md bg-slate-100">
+                    <div
+                      className="h-full rounded-md bg-violet-500 transition-all"
+                      style={{ width: `${widthPct}%` }}
+                    />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
+
 export default function AnalyticsPage() {
   const orgName = useAuthStore((s) => s.org?.name ?? '')
   const orgId = useAuthStore((s) => s.org?.id ?? '')
@@ -118,10 +212,42 @@ export default function AnalyticsPage() {
   const [datePreset, setDatePreset] = useState<'7d' | '30d' | '90d' | 'custom'>('30d')
   const [customStart, setCustomStart] = useState<string>('')
   const [customEnd, setCustomEnd] = useState<string>('')
+  const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null)
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['analytics', orgId],
-    queryFn: () => fetchAnalytics(orgId),
+    queryKey: ['analytics', orgId, selectedWidgetId],
+    queryFn: () => fetchAnalytics(orgId, selectedWidgetId),
+    enabled: Boolean(orgId),
+  })
+
+  const { data: funnelEvents } = useQuery({
+    queryKey: ['funnel-events', orgId, selectedWidgetId],
+    queryFn: async () => {
+      let query = supabase
+        .from('widget_session_events')
+        .select('session_id, event_type, step_index, question_id, question_text, created_at')
+        .eq('org_id', orgId)
+        .order('created_at', { ascending: true })
+      if (selectedWidgetId) {
+        query = query.eq('widget_id', selectedWidgetId)
+      }
+      const { data } = await query
+      return data ?? []
+    },
+    enabled: Boolean(orgId),
+  })
+
+  const { data: widgets } = useQuery({
+    queryKey: ['widgets-list', orgId],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('widgets')
+        .select('id, button_text, status')
+        .eq('org_id', orgId)
+        .neq('status', 'archived')
+        .order('created_at', { ascending: false })
+      return data ?? []
+    },
     enabled: Boolean(orgId),
   })
 
@@ -240,6 +366,44 @@ export default function AnalyticsPage() {
       .slice(0, 10)
   }, [filteredSessions, providerNameById])
 
+  const funnelSteps = useMemo(() => {
+    const events = funnelEvents ?? []
+
+    const sessionsByEvent = new Map<string, Set<string>>()
+    events.forEach((e) => {
+      if (!sessionsByEvent.has(e.event_type)) {
+        sessionsByEvent.set(e.event_type, new Set())
+      }
+      sessionsByEvent.get(e.event_type)!.add(e.session_id)
+    })
+
+    const questionSteps = new Map<number, { label: string; sessions: Set<string> }>()
+    events
+      .filter((e) => e.event_type === 'question_answered')
+      .forEach((e) => {
+        const idx = e.step_index ?? 0
+        if (!questionSteps.has(idx)) {
+          questionSteps.set(idx, { label: e.question_text ?? `Step ${idx}`, sessions: new Set() })
+        }
+        questionSteps.get(idx)!.sessions.add(e.session_id)
+      })
+
+    const ordered = Array.from(questionSteps.entries()).sort((a, b) => a[0] - b[0])
+
+    const steps: { label: string; count: number }[] = [
+      { label: 'Widget Opened', count: sessionsByEvent.get('widget_opened')?.size ?? 0 },
+      { label: 'Case Type Selected', count: sessionsByEvent.get('case_type_selected')?.size ?? 0 },
+      ...ordered.map(([, v]) => ({ label: v.label, count: v.sessions.size })),
+      { label: 'Results Shown', count: sessionsByEvent.get('results_shown')?.size ?? 0 },
+    ]
+
+    const bookingCount = sessionsByEvent.get('booking_clicked')?.size ?? 0
+    const callCount = sessionsByEvent.get('call_clicked')?.size ?? 0
+    const top = steps[0]?.count ?? 0
+
+    return { steps, bookingCount, callCount, top }
+  }, [funnelEvents])
+
   const analyticsLoading = Boolean(orgId) && isLoading
 
   return (
@@ -257,6 +421,18 @@ export default function AnalyticsPage() {
         <>
           <div className="mb-6 flex flex-wrap items-center gap-2">
             <span className="w-full text-xs text-slate-500">Filters all data below</span>
+            <select
+              value={selectedWidgetId ?? ''}
+              onChange={(e) => setSelectedWidgetId(e.target.value || null)}
+              className="rounded-md border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700"
+            >
+              <option value="">All Widgets</option>
+              {(widgets ?? []).map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.button_text}
+                </option>
+              ))}
+            </select>
             {(['7d', '30d', '90d'] as const).map((p) => (
               <button
                 key={p}
@@ -331,6 +507,13 @@ export default function AnalyticsPage() {
               <p className="mt-1 text-sm text-slate-500">Drop-off Rate</p>
             </div>
           </div>
+
+          <FunnelChart
+            steps={funnelSteps.steps}
+            bookingCount={funnelSteps.bookingCount}
+            callCount={funnelSteps.callCount}
+            top={funnelSteps.top}
+          />
 
           <section className="mb-8 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-200 px-6 py-4">
