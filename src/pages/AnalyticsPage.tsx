@@ -642,6 +642,7 @@ export default function AnalyticsPage() {
           dropOffPoint: lastRun.dropOffPoint,
           runs: runData,
           providersClicked: d.session?.providers_clicked ?? [],
+          resultsCount: d.session?.results_count ?? null,
         }
       })
       .filter(s => s.openedAt)
@@ -889,7 +890,7 @@ export default function AnalyticsPage() {
                             <td colSpan={5} className="px-6 py-4">
                               <div className="mb-3 flex flex-wrap gap-2">
                                 {s.wentBack && <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">↩ Went Back</span>}
-                                {s.browseAll && <span className="rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-medium text-purple-700">Browsed All Providers</span>}
+                                {s.resultsCount != null && <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">{s.resultsCount} result{s.resultsCount !== 1 ? 's' : ''} shown</span>}
                                 {s.helpMeChoose && <span className="rounded-full bg-sky-100 px-2.5 py-0.5 text-xs font-medium text-sky-700">Used "Help Me Choose"</span>}
                                 {s.profileViewed && <span className="rounded-full bg-slate-200 px-2.5 py-0.5 text-xs font-medium text-slate-700">Viewed Profile</span>}
                                 {s.calledFromNoResults && <span className="rounded-full bg-orange-100 px-2.5 py-0.5 text-xs font-medium text-orange-700">Called from No Results</span>}
