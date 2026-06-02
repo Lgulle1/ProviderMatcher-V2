@@ -123,6 +123,7 @@
       bypassMode: false,
       bypassResumeIndex: null,
       offeringsBeforeBypass: null,
+      offeringsBeforeQuestion: null,
       history: [],
       sessionId: generateUUID(),
     },
@@ -406,6 +407,11 @@
         return
       }
       var q = questions[index]
+      // Snapshot the offerings as they stand BEFORE this question filters them.
+      // goBack restores this so re-answering a question (via Back) re-filters from
+      // the correct base instead of stacking a second filter on an already-narrowed
+      // set — which previously dropped valid providers (e.g. age 17 then 68 → 4 of 8).
+      this.state.offeringsBeforeQuestion = this.state.activeOfferings.slice()
       if (q.question_type === 'clinical' && q.constraint_id) {
         var constraint = this.findConstraint(q.constraint_id)
         if (constraint) {
@@ -712,7 +718,7 @@
       }
       this.state.history.push({
         questionIndex: this.state.currentQuestionIndex,
-        offerings: this.state.activeOfferings.slice(),
+        offerings: (this.state.offeringsBeforeQuestion || this.state.activeOfferings).slice(),
         answers: Object.assign({}, this.state.answers),
         selectedCaseTypeId: this.state.selectedCaseTypeId,
         selectedLocationId: this.state.selectedLocationId,
