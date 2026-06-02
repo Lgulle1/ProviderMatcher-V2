@@ -297,7 +297,7 @@ export default function AnalyticsPage() {
   const [customStart, setCustomStart] = useState('')
   const [customEnd, setCustomEnd] = useState('')
   const [funnelMode, setFunnelMode] = useState<FunnelMode>('combined')
-  const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null)
+  const [expandedRowKey, setExpandedRowKey] = useState<string | null>(null)
   const [showAllSessions, setShowAllSessions] = useState(false)
 
   const { data, isLoading, error } = useQuery({
@@ -507,14 +507,13 @@ export default function AnalyticsPage() {
       .slice(0, 10)
   }, [dedupedSessions, providerNameById])
 
-  // ── Session log
+  // ── Session log — one row per session; restarts shown as labeled attempts when expanded
   const sessionLog = useMemo(() => {
     const map = new Map<string, { events: SessionEvent[]; session?: WidgetSession }>()
     filteredEvents.forEach(e => {
       if (!map.has(e.session_id)) map.set(e.session_id, { events: [] })
       map.get(e.session_id)!.events.push(e)
     })
-    // Sessions are ordered newest-first; only set once so older duplicates don't overwrite
     filteredSessions.forEach(s => {
       if (map.has(s.session_id)) {
         if (!map.get(s.session_id)!.session) map.get(s.session_id)!.session = s
@@ -522,61 +521,116 @@ export default function AnalyticsPage() {
         map.set(s.session_id, { events: [], session: s })
       }
     })
+
+    function buildRunData(runEvents: SessionEvent[], runIndex: number) {
+      const endsWithRestart = runEvents.some(e => e.event_type === 'start_over_clicked')
+      const caseTypeEvent = runEvents.find(e => e.event_type === 'case_type_selected')
+      const stepEvents = runEvents.filter(e => e.event_type === 'question_answered' && e.step_index != null)
+      // Per-attempt outcome comes straight from the events the widget emits.
+      const zeroResults = runEvents.some(e => e.event_type === 'zero_results_shown')
+      const booked = runEvents.some(e => e.event_type === 'booking_clicked')
+      const called = runEvents.some(e => e.event_type === 'call_clicked' || e.event_type === 'call_office_clicked')
+
+      const eventOrder = ['widget_opened', 'case_type_selected', 'question_answered', 'results_shown', 'zero_results_shown', 'booking_clicked', 'call_clicked']
+      const lastMeaningful = [...runEvents].reverse().find(e => eventOrder.includes(e.event_type))
+      let dropOffPoint: string
+      if (endsWithRestart) {
+        dropOffPoint = 'Restarted'
+      } else if (lastMeaningful?.event_type === 'booking_clicked' || lastMeaningful?.event_type === 'call_clicked') {
+        dropOffPoint = 'Converted'
+      } else if (lastMeaningful?.event_type === 'zero_results_shown') {
+        dropOffPoint = 'No Results'
+      } else if (lastMeaningful?.event_type === 'results_shown') {
+        dropOffPoint = 'Saw Results — No CTA'
+      } else if (lastMeaningful?.event_type === 'question_answered') {
+        dropOffPoint = `Dropped at: ${lastMeaningful.question_text ?? 'question'}`
+      } else if (lastMeaningful?.event_type === 'case_type_selected') {
+        dropOffPoint = 'Dropped after case type'
+      } else if (lastMeaningful?.event_type === 'widget_opened') {
+        dropOffPoint = 'Opened — no interaction'
+      } else {
+        dropOffPoint = 'Unknown'
+      }
+
+      let wentBack = false
+      for (let i = 1; i < stepEvents.length; i++) {
+        if ((stepEvents[i].step_index ?? 0) < (stepEvents[i - 1].step_index ?? 0)) { wentBack = true; break }
+      }
+
+      const stepMap = new Map<number, SessionEvent>()
+      stepEvents.forEach(e => stepMap.set(e.step_index!, e))
+      const caseTypeSyntheticEvent: SessionEvent | null = caseTypeEvent
+        ? { ...caseTypeEvent, question_text: 'Case Type', answer_text: caseTypeEvent.question_text }
+        : null
+      const questionFlow = [
+        ...(caseTypeSyntheticEvent ? [caseTypeSyntheticEvent] : []),
+        ...Array.from(stepMap.entries()).sort((a, b) => a[0] - b[0]).map(([, e]) => e),
+      ]
+
+      return { runIndex, endsWithRestart, booked, called, zeroResults, wentBack, dropOffPoint, questionFlow }
+    }
+
     return Array.from(map.entries())
       .map(([sessionId, d]) => {
         const sortedEvents = [...d.events].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-        const openedAt = sortedEvents.find(e => e.event_type === 'widget_opened')?.created_at ?? sortedEvents[0]?.created_at ?? d.session?.created_at ?? ''
+
+        // Split into runs at start_over_clicked
+        const rawRuns: SessionEvent[][] = []
+        let cur: SessionEvent[] = []
+        for (const e of sortedEvents) {
+          cur.push(e)
+          if (e.event_type === 'start_over_clicked') { rawRuns.push(cur); cur = [] }
+        }
+        rawRuns.push(cur)
+        const runs = rawRuns.filter(r => r.length > 0)
+        const totalRuns = runs.length
+        const restarted = totalRuns > 1
+
+        const runData = runs.map((r, i) => buildRunData(r, i))
+
+        // Legacy fallback: sessions recorded before the widget emitted per-attempt
+        // zero_results_shown events only have a session-level flag. Attribute it to
+        // the attempt whose time window contains the session record's created_at.
+        const hasZeroEvent = sortedEvents.some(e => e.event_type === 'zero_results_shown')
+        if (!hasZeroEvent && d.session?.zero_results === true && d.session.created_at) {
+          const t = new Date(d.session.created_at).getTime()
+          let idx = runs.findIndex(r => {
+            const start = new Date(r[0].created_at).getTime()
+            const end = new Date(r[r.length - 1].created_at).getTime()
+            return t >= start - 2000 && t <= end + 5000
+          })
+          if (idx === -1) idx = totalRuns - 1
+          runData[idx].zeroResults = true
+          if (!runData[idx].endsWithRestart) runData[idx].dropOffPoint = 'No Results'
+        }
+
+        const lastRun = runData[totalRuns - 1]
+
+        const openedAt = sortedEvents.find(e => e.event_type === 'widget_opened')?.created_at
+          ?? sortedEvents[0]?.created_at ?? d.session?.created_at ?? ''
         const caseTypeEvent = sortedEvents.find(e => e.event_type === 'case_type_selected')
         const caseTypeName = d.session?.case_type_id
           ? (caseTypeNameById.get(d.session.case_type_id) ?? 'Unknown')
           : (caseTypeEvent?.question_text ?? '—')
+
         const booked = sortedEvents.some(e => e.event_type === 'booking_clicked')
         const called = sortedEvents.some(e => e.event_type === 'call_clicked' || e.event_type === 'call_office_clicked')
         const calledFromNoResults = sortedEvents.some(e => e.event_type === 'call_office_clicked')
-        const zeroResults = d.session?.zero_results === true
-        const restarted = sortedEvents.some(e => e.event_type === 'start_over_clicked')
-
-        // Detect back navigation: if step_index goes backwards at any point
-        const stepEvents = sortedEvents.filter(e => e.event_type === 'question_answered' && e.step_index != null)
-        let wentBack = false
-        for (let i = 1; i < stepEvents.length; i++) {
-          if ((stepEvents[i].step_index ?? 0) < (stepEvents[i - 1].step_index ?? 0)) {
-            wentBack = true
-            break
-          }
-        }
-
-        // Drop-off point: last meaningful event type
-        const eventOrder = ['widget_opened', 'case_type_selected', 'question_answered', 'results_shown', 'booking_clicked', 'call_clicked']
-        const lastEvent = [...sortedEvents].reverse().find(e => eventOrder.includes(e.event_type))
-        const dropOffPoint = lastEvent?.event_type === 'booking_clicked' || lastEvent?.event_type === 'call_clicked'
-          ? 'Converted'
-          : lastEvent?.event_type === 'results_shown'
-          ? zeroResults ? 'No Results' : 'Saw Results — No CTA'
-          : lastEvent?.event_type === 'question_answered'
-          ? `Dropped at: ${lastEvent.question_text ?? 'question'}`
-          : lastEvent?.event_type === 'case_type_selected'
-          ? 'Dropped after case type'
-          : lastEvent?.event_type === 'widget_opened'
-          ? 'Opened — no interaction'
-          : 'Unknown'
-
-        // Deduplicated question flow (last answer per step when they went back)
-        const stepMap = new Map<number, SessionEvent>()
-        stepEvents.forEach(e => stepMap.set(e.step_index!, e))
-        const caseTypeSyntheticEvent: SessionEvent | null = caseTypeEvent
-          ? { ...caseTypeEvent, question_text: 'Case Type', answer_text: caseTypeEvent.question_text }
-          : null
-        const questionFlow = [
-          ...(caseTypeSyntheticEvent ? [caseTypeSyntheticEvent] : []),
-          ...Array.from(stepMap.entries()).sort((a, b) => a[0] - b[0]).map(([, e]) => e),
-        ]
 
         return {
-          sessionId, openedAt, caseTypeName,
-          booked, called, bookedOrCalled: booked || called,
-          zeroResults, wentBack, restarted, calledFromNoResults, dropOffPoint,
-          questionFlow,
+          sessionId,
+          openedAt,
+          caseTypeName,
+          booked,
+          called,
+          bookedOrCalled: booked || called,
+          zeroResults: lastRun.zeroResults,
+          wentBack: runData.some(r => r.wentBack),
+          restarted,
+          totalRuns,
+          calledFromNoResults,
+          dropOffPoint: lastRun.dropOffPoint,
+          runs: runData,
           providersClicked: d.session?.providers_clicked ?? [],
         }
       })
@@ -794,7 +848,7 @@ export default function AnalyticsPage() {
                 </thead>
                 <tbody>
                   {visibleSessions.map(s => {
-                    const expanded = expandedSessionId === s.sessionId
+                    const expanded = expandedRowKey === s.sessionId
                     const ctaLabel = s.booked && s.called ? 'Booked + Called'
                       : s.booked ? 'Booked'
                       : s.called ? 'Called'
@@ -806,11 +860,16 @@ export default function AnalyticsPage() {
                     return (
                       <Fragment key={s.sessionId}>
                         <tr className="cursor-pointer border-b border-slate-100 hover:bg-slate-50/80"
-                          onClick={() => setExpandedSessionId(expanded ? null : s.sessionId)}>
+                          onClick={() => setExpandedRowKey(expanded ? null : s.sessionId)}>
                           <td className="px-4 py-3 text-slate-400">
                             {expanded ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronRight className="h-4 w-4" aria-hidden />}
                           </td>
-                          <td className="px-4 py-3 text-slate-700">{formatDateTime(s.openedAt)}</td>
+                          <td className="px-4 py-3 text-slate-700">
+                            {formatDateTime(s.openedAt)}
+                            {s.restarted && (
+                              <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">↺ {s.totalRuns} attempts</span>
+                            )}
+                          </td>
                           <td className="px-4 py-3 text-slate-700">{s.caseTypeName}</td>
                           <td className={`px-4 py-3 ${ctaColor}`}>{ctaLabel}</td>
                           <td className="px-4 py-3 text-xs text-slate-500">{s.dropOffPoint}</td>
@@ -819,48 +878,87 @@ export default function AnalyticsPage() {
                           <tr className="border-b border-slate-100 bg-slate-50/50">
                             <td colSpan={5} className="px-6 py-4">
                               <div className="mb-3 flex flex-wrap gap-2">
-                                {s.zeroResults && <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700">No Results</span>}
                                 {s.wentBack && <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">↩ Went Back</span>}
-                                {s.restarted && <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-700">↺ Restarted</span>}
                                 {s.calledFromNoResults && <span className="rounded-full bg-orange-100 px-2.5 py-0.5 text-xs font-medium text-orange-700">Called from No Results</span>}
                                 {s.bookedOrCalled && <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700">Converted</span>}
                               </div>
-                              <div className="grid gap-6 md:grid-cols-2">
-                                <div>
-                                  <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Question Flow</h3>
-                                  {s.questionFlow.length === 0 ? (
-                                    <p className="text-sm text-slate-500">No questions answered.</p>
-                                  ) : (
-                                    <ol className="space-y-2">
-                                      {s.questionFlow.map((e, i) => (
-                                        <li key={e.id} className="flex items-start gap-2 text-sm">
-                                          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-medium text-indigo-700">{i + 1}</span>
-                                          <span className="text-slate-700">
-                                            {e.question_text ?? `Step ${i + 1}`}
-                                            {e.answer_text && (
-                                              <span className="ml-2 rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">
-                                                {e.answer_text}
+                              {s.restarted ? (
+                                <div className="space-y-4">
+                                  {s.runs.map((run, ri) => (
+                                    <div key={ri} className="rounded-lg border border-slate-200 bg-white p-4">
+                                      <div className="mb-2 flex items-center gap-2">
+                                        <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">
+                                          Attempt {ri + 1}
+                                        </span>
+                                        {run.zeroResults && <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">No Results</span>}
+                                        <span className="text-xs text-slate-400">{run.dropOffPoint}</span>
+                                      </div>
+                                      {run.questionFlow.length === 0 ? (
+                                        <p className="text-sm text-slate-500">No questions answered.</p>
+                                      ) : (
+                                        <ol className="space-y-1.5">
+                                          {run.questionFlow.map((e, i) => (
+                                            <li key={e.id} className="flex items-start gap-2 text-sm">
+                                              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-medium text-indigo-700">{i + 1}</span>
+                                              <span className="text-slate-700">
+                                                {e.question_text ?? `Step ${i + 1}`}
+                                                {e.answer_text && (
+                                                  <span className="ml-2 rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">{e.answer_text}</span>
+                                                )}
                                               </span>
-                                            )}
-                                          </span>
-                                        </li>
-                                      ))}
-                                    </ol>
+                                            </li>
+                                          ))}
+                                        </ol>
+                                      )}
+                                    </div>
+                                  ))}
+                                  {s.providersClicked.length > 0 && (
+                                    <div>
+                                      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Providers Clicked</h3>
+                                      <ul className="space-y-1">
+                                        {s.providersClicked.map((pid, i) => (
+                                          <li key={i} className="text-sm text-slate-700">{providerNameById.get(pid) ?? 'Unknown'}</li>
+                                        ))}
+                                      </ul>
+                                    </div>
                                   )}
                                 </div>
-                                <div>
-                                  <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Providers Clicked</h3>
-                                  {s.providersClicked.length === 0 ? (
-                                    <p className="text-sm text-slate-500">None</p>
-                                  ) : (
-                                    <ul className="space-y-1">
-                                      {s.providersClicked.map((pid, i) => (
-                                        <li key={i} className="text-sm text-slate-700">{providerNameById.get(pid) ?? 'Unknown'}</li>
-                                      ))}
-                                    </ul>
-                                  )}
+                              ) : (
+                                <div className="grid gap-6 md:grid-cols-2">
+                                  <div>
+                                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Question Flow</h3>
+                                    {s.runs[0]?.questionFlow.length === 0 ? (
+                                      <p className="text-sm text-slate-500">No questions answered.</p>
+                                    ) : (
+                                      <ol className="space-y-2">
+                                        {s.runs[0]?.questionFlow.map((e, i) => (
+                                          <li key={e.id} className="flex items-start gap-2 text-sm">
+                                            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-medium text-indigo-700">{i + 1}</span>
+                                            <span className="text-slate-700">
+                                              {e.question_text ?? `Step ${i + 1}`}
+                                              {e.answer_text && (
+                                                <span className="ml-2 rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">{e.answer_text}</span>
+                                              )}
+                                            </span>
+                                          </li>
+                                        ))}
+                                      </ol>
+                                    )}
+                                  </div>
+                                  <div>
+                                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Providers Clicked</h3>
+                                    {s.providersClicked.length === 0 ? (
+                                      <p className="text-sm text-slate-500">None</p>
+                                    ) : (
+                                      <ul className="space-y-1">
+                                        {s.providersClicked.map((pid, i) => (
+                                          <li key={i} className="text-sm text-slate-700">{providerNameById.get(pid) ?? 'Unknown'}</li>
+                                        ))}
+                                      </ul>
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
+                              )}
                             </td>
                           </tr>
                         )}

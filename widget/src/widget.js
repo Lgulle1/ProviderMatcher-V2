@@ -784,6 +784,10 @@
 
     showZeroResults: function () {
       var self = this
+      // Record the outcome before any DOM rendering, and emit a per-attempt event
+      // so the log can attribute "no results" to the exact attempt that hit it.
+      this.trackEvent('zero_results_shown')
+      this.trackSession(true)
       var body = this.shadow.getElementById('pm-body')
       if (!body) return
       body.innerHTML = ''
@@ -866,15 +870,11 @@
       btnWrap.appendChild(restartBtn)
       div.appendChild(btnWrap)
       body.appendChild(div)
-      this.trackSession(true)
     },
 
     showResults: function () {
       var self = this
       this.state.phase = 'results'
-      var body = this.shadow.getElementById('pm-body')
-      if (!body) return
-      body.innerHTML = ''
       var seen = {}
       var unique = []
       this.state.activeOfferings.forEach(function (o) {
@@ -890,6 +890,13 @@
         this.showZeroResults()
         return
       }
+      // Record the outcome the moment it's decided — before any DOM rendering, so
+      // a render error can never prevent the log from recording results were shown.
+      this.trackEvent('results_shown')
+      this.trackSession(false)
+      var body = this.shadow.getElementById('pm-body')
+      if (!body) return
+      body.innerHTML = ''
       unique = fisherYatesShuffle(unique)
       var results = document.createElement('div')
       results.className = 'pm-results'
@@ -1008,8 +1015,6 @@
       restartBtn.onclick = function() { self.resetState(); self.startFlow(); }
       results.appendChild(restartBtn)
       body.appendChild(results)
-      this.trackEvent('results_shown')
-      this.trackSession(false)
     },
 
     renderGrouped: function (container, items) {
@@ -1342,67 +1347,68 @@
       return card
     },
 
-    trackEvent: function (eventType, stepIndex, questionId, questionText, answerText) {
-      try {
-        var config = (this.data && this.data.config) || {}
-        fetch(SUPABASE_URL + '/functions/v1/track-session', {
-          method: 'POST',
-          keepalive: true,
-          headers: { 'Content-Type': 'application/json', 'apikey': supabaseAnonKey, 'Authorization': 'Bearer ' + supabaseAnonKey },
-          body: JSON.stringify({
-            type: 'event',
-            session_id: this.state.sessionId,
-            widget_id: this.widgetId,
-            org_id: config.org_id || null,
-            event_type: eventType,
-            step_index: stepIndex != null ? stepIndex : null,
-            question_id: questionId != null ? questionId : null,
-            question_text: questionText != null ? questionText : null,
-            answer_text: answerText != null ? answerText : null,
-          }),
-        })
-      } catch (e) {
-        /* silent */
+    // Shared POST for all tracking. Retries once on network error / 5xx, and
+    // surfaces a console.warn on final failure instead of swallowing silently —
+    // a lost tracking call should never be invisible.
+    postTracking: function (payload, label) {
+      var url = SUPABASE_URL + '/functions/v1/track-session'
+      var opts = {
+        method: 'POST',
+        keepalive: true,
+        headers: { 'Content-Type': 'application/json', 'apikey': supabaseAnonKey, 'Authorization': 'Bearer ' + supabaseAnonKey },
+        body: JSON.stringify(payload),
       }
+      function attempt(retriesLeft) {
+        return fetch(url, opts)
+          .then(function (res) {
+            if (!res.ok) {
+              if (res.status >= 500 && retriesLeft > 0) return attempt(retriesLeft - 1)
+              console.warn('[ProviderMatcher] tracking failed (' + label + '): HTTP ' + res.status)
+            }
+            return res
+          })
+          .catch(function (err) {
+            if (retriesLeft > 0) return attempt(retriesLeft - 1)
+            console.warn('[ProviderMatcher] tracking failed (' + label + '):', err)
+          })
+      }
+      return attempt(1)
     },
 
-    trackSession: async function (zeroResults) {
-      try {
-        await fetch(SUPABASE_URL + '/functions/v1/track-session', {
-          method: 'POST',
-          keepalive: true,
-          headers: { 'Content-Type': 'application/json', 'apikey': supabaseAnonKey, 'Authorization': 'Bearer ' + supabaseAnonKey },
-          body: JSON.stringify({
-            widget_id: this.widgetId,
-            session_id: this.state.sessionId,
-            case_type_id: this.state.selectedCaseTypeId,
-            answers: this.state.answers,
-            results_count: this.state.activeOfferings.length,
-            zero_results: zeroResults,
-            providers_clicked: [],
-          }),
-        })
-      } catch (e) {
-        /* silent */
-      }
+    trackEvent: function (eventType, stepIndex, questionId, questionText, answerText) {
+      var config = (this.data && this.data.config) || {}
+      return this.postTracking({
+        type: 'event',
+        session_id: this.state.sessionId,
+        widget_id: this.widgetId,
+        org_id: config.org_id || null,
+        event_type: eventType,
+        step_index: stepIndex != null ? stepIndex : null,
+        question_id: questionId != null ? questionId : null,
+        question_text: questionText != null ? questionText : null,
+        answer_text: answerText != null ? answerText : null,
+      }, 'event:' + eventType)
+    },
+
+    trackSession: function (zeroResults) {
+      return this.postTracking({
+        widget_id: this.widgetId,
+        session_id: this.state.sessionId,
+        case_type_id: this.state.selectedCaseTypeId,
+        answers: this.state.answers,
+        results_count: this.state.activeOfferings.length,
+        zero_results: zeroResults,
+        providers_clicked: [],
+      }, 'session(zero=' + zeroResults + ')')
     },
 
     trackClick: function (providerId) {
-      try {
-        fetch(SUPABASE_URL + '/functions/v1/track-session', {
-          method: 'POST',
-          keepalive: true,
-          headers: { 'Content-Type': 'application/json', 'apikey': supabaseAnonKey, 'Authorization': 'Bearer ' + supabaseAnonKey },
-          body: JSON.stringify({
-            widget_id: this.widgetId,
-            session_id: this.state.sessionId,
-            provider_id: providerId,
-            type: 'click',
-          }),
-        })
-      } catch (e) {
-        /* silent */
-      }
+      return this.postTracking({
+        widget_id: this.widgetId,
+        session_id: this.state.sessionId,
+        provider_id: providerId,
+        type: 'click',
+      }, 'click')
     },
   }
 
