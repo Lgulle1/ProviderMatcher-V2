@@ -303,6 +303,7 @@
         closeBtn.className = 'pm-close'
         closeBtn.innerHTML = '&times;'
         closeBtn.onclick = function () {
+          self.trackEvent('widget_closed')
           chat.remove()
           self.resetState()
           document.body.style.overflow = '';
@@ -694,7 +695,11 @@
 
     handleAnswer: function (q, value, displayText) {
       var self = this
-      if (q.question_type === 'clinical' || q.question_type === 'location') {
+      // Track every question the user answers. 'entry' (case type) is tracked
+      // separately as case_type_selected, so everything else flows through here —
+      // including the 'provider' (do-you-know-who-you-want) question, which was
+      // previously invisible in the log and funnel.
+      if (q.question_type !== 'entry') {
         this.trackEvent('question_answered', this.state.currentQuestionIndex, q.id, q.question_text, displayText)
       }
       this.state.answers[q.id] = value
@@ -892,7 +897,9 @@
       }
       // Record the outcome the moment it's decided — before any DOM rendering, so
       // a render error can never prevent the log from recording results were shown.
-      this.trackEvent('results_shown')
+      // answer_text distinguishes the guided "matched" list from the "browse all"
+      // list users reach by answering Yes to the preferred-provider question.
+      this.trackEvent('results_shown', null, null, null, this.state.bypassMode ? 'browse_all' : 'matched')
       this.trackSession(false)
       var body = this.shadow.getElementById('pm-body')
       if (!body) return
@@ -935,6 +942,7 @@
         helpLink.className = 'pm-help'
         helpLink.textContent = 'Help me choose instead'
         helpLink.onclick = function () {
+          self.trackEvent('help_me_choose_clicked')
           self.state.bypassMode = false
           body.innerHTML = ''
           if (self.state.offeringsBeforeBypass && self.state.offeringsBeforeBypass.length) {
@@ -1012,7 +1020,7 @@
       var restartBtn = document.createElement('button')
       restartBtn.className = 'pm-restart'
       restartBtn.textContent = 'Start Over'
-      restartBtn.onclick = function() { self.resetState(); self.startFlow(); }
+      restartBtn.onclick = function() { self.trackEvent('start_over_clicked'); self.resetState(); self.startFlow(); }
       results.appendChild(restartBtn)
       body.appendChild(results)
     },
@@ -1132,6 +1140,7 @@
         profileLink.target = '_blank'
         profileLink.rel = 'noopener noreferrer'
         profileLink.textContent = '👤 View Profile →'
+        profileLink.onclick = function () { self.trackEvent('profile_viewed') }
         info.appendChild(profileLink)
       }
 
@@ -1187,6 +1196,7 @@
           bookTriggerFallback.className = 'pm-book'
           bookTriggerFallback.textContent = 'Book Now'
           bookTriggerFallback.onclick = function () {
+            self.trackEvent('booking_options_opened')
             defaultPanel.style.display = 'none'
             bookSlide.style.display = 'flex'
           }
@@ -1213,6 +1223,7 @@
         bookTrigger.className = 'pm-book'
         bookTrigger.textContent = 'Book Now'
         bookTrigger.onclick = function () {
+          self.trackEvent('booking_options_opened')
           defaultPanel.style.display = 'none'
           bookSlide.style.display = 'flex'
         }
@@ -1253,6 +1264,7 @@
             callTriggerFallback.className = 'pm-call'
             callTriggerFallback.textContent = '📞 Call Office'
             callTriggerFallback.onclick = function () {
+              self.trackEvent('call_options_opened')
               defaultPanel.style.display = 'none'
               callSlide.style.display = 'flex'
             }
@@ -1275,6 +1287,7 @@
           callTrigger.className = 'pm-call'
           callTrigger.textContent = '📞 Call Office'
           callTrigger.onclick = function () {
+            self.trackEvent('call_options_opened')
             defaultPanel.style.display = 'none'
             callSlide.style.display = 'flex'
           }
@@ -1327,7 +1340,11 @@
         var btn = document.createElement('button')
         btn.className = 'pm-call'
         btn.textContent = '📞 ' + (loc ? loc.name : 'Office')
-        btn.onclick = function () { window.location.href = 'tel:' + pl.phone }
+        btn.onclick = function () {
+          self.trackClick(provider.id)
+          self.trackEvent('call_clicked')
+          window.location.href = 'tel:' + pl.phone
+        }
         callSlide.appendChild(btn)
       })
       var callBack = document.createElement('button')

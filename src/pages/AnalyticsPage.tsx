@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useRef, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   BarChart3,
@@ -384,17 +384,21 @@ export default function AnalyticsPage() {
 
   // ── No Results Pipeline (must be before funnelSteps)
   const noResultsPipeline = useMemo(() => {
-    const total = dedupedSessions.filter(s => s.zero_results === true).length
-    const called = new Set(filteredEvents.filter(e => e.event_type === 'call_office_clicked').map(e => e.session_id)).size
-    const restarted = new Set(filteredEvents.filter(e => e.event_type === 'start_over_clicked').map(e => e.session_id)).size
-    const restartedSessionIds = new Set(filteredEvents.filter(e => e.event_type === 'start_over_clicked').map(e => e.session_id))
+    // Scope every step to sessions that actually hit no results. start_over_clicked
+    // now also fires from the results screen, so counting it globally would wrongly
+    // pull results-screen restarts into this funnel.
+    const zeroResultSessionIds = new Set(dedupedSessions.filter(s => s.zero_results === true).map(s => s.session_id))
+    const total = zeroResultSessionIds.size
+    const called = new Set(filteredEvents.filter(e => e.event_type === 'call_office_clicked' && zeroResultSessionIds.has(e.session_id)).map(e => e.session_id)).size
+    const restartedSessionIds = new Set(filteredEvents.filter(e => e.event_type === 'start_over_clicked' && zeroResultSessionIds.has(e.session_id)).map(e => e.session_id))
+    const restarted = restartedSessionIds.size
     const recoveredIds = new Set(filteredEvents.filter(e =>
       (e.event_type === 'booking_clicked' || e.event_type === 'call_clicked') && restartedSessionIds.has(e.session_id)
     ).map(e => e.session_id))
     const recovered = recoveredIds.size
     const pct = (n: number) => total > 0 ? Math.round((n / total) * 100) : 0
     return { total, called, restarted, recovered, pct }
-  }, [filteredEvents, filteredSessions])
+  }, [filteredEvents, dedupedSessions])
 
   // ── Funnel steps
   const funnelSteps = useMemo((): FunnelStep[] => {
@@ -616,6 +620,9 @@ export default function AnalyticsPage() {
         const booked = sortedEvents.some(e => e.event_type === 'booking_clicked')
         const called = sortedEvents.some(e => e.event_type === 'call_clicked' || e.event_type === 'call_office_clicked')
         const calledFromNoResults = sortedEvents.some(e => e.event_type === 'call_office_clicked')
+        const browseAll = sortedEvents.some(e => e.event_type === 'results_shown' && e.answer_text === 'browse_all')
+        const helpMeChoose = sortedEvents.some(e => e.event_type === 'help_me_choose_clicked')
+        const profileViewed = sortedEvents.some(e => e.event_type === 'profile_viewed')
 
         return {
           sessionId,
@@ -629,6 +636,9 @@ export default function AnalyticsPage() {
           restarted,
           totalRuns,
           calledFromNoResults,
+          browseAll,
+          helpMeChoose,
+          profileViewed,
           dropOffPoint: lastRun.dropOffPoint,
           runs: runData,
           providersClicked: d.session?.providers_clicked ?? [],
@@ -879,6 +889,9 @@ export default function AnalyticsPage() {
                             <td colSpan={5} className="px-6 py-4">
                               <div className="mb-3 flex flex-wrap gap-2">
                                 {s.wentBack && <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">↩ Went Back</span>}
+                                {s.browseAll && <span className="rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-medium text-purple-700">Browsed All Providers</span>}
+                                {s.helpMeChoose && <span className="rounded-full bg-sky-100 px-2.5 py-0.5 text-xs font-medium text-sky-700">Used "Help Me Choose"</span>}
+                                {s.profileViewed && <span className="rounded-full bg-slate-200 px-2.5 py-0.5 text-xs font-medium text-slate-700">Viewed Profile</span>}
                                 {s.calledFromNoResults && <span className="rounded-full bg-orange-100 px-2.5 py-0.5 text-xs font-medium text-orange-700">Called from No Results</span>}
                                 {s.bookedOrCalled && <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700">Converted</span>}
                               </div>

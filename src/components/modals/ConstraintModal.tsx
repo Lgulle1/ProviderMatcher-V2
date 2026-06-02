@@ -118,22 +118,6 @@ function buildPayload(
   }
 }
 
-function previewJsonExample(type: ConstraintType, form: FormState): string {
-  const mk = form.mapped_key.trim() || 'your_key'
-  if (type === 'binary') {
-    return JSON.stringify({ [mk]: 1 }, null, 2)
-  }
-  if (type === 'range') {
-    const minK = form.mapped_key.trim() || 'age_min'
-    const maxK = form.secondary_mapped_key.trim() || 'age_max'
-    const o: Record<string, number> = {}
-    o[minK] = 18
-    o[maxK] = 65
-    return JSON.stringify(o, null, 2)
-  }
-  return JSON.stringify({ [mk]: 'example_value' }, null, 2)
-}
-
 interface ConstraintModalProps {
   isOpen: boolean
   onClose: () => void
