@@ -525,7 +525,7 @@ export default function AnalyticsPage() {
           name: providerNameById.get(id) ?? 'Unknown',
         }
       })
-      .sort((a, b) => b.shown - a.shown || b.clicks - a.clicks)
+      .sort((a, b) => b.clicks - a.clicks || b.shown - a.shown)
   }, [dedupedSessions, data?.providers, providerNameById])
 
   // ── Per-provider impression context — when a provider was shown, what was the typical session?
