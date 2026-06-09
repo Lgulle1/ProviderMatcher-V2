@@ -9,6 +9,13 @@ import { getLocations } from '../../lib/api/locations'
 import { getProviders } from '../../lib/api/providers'
 import { getQuestions } from '../../lib/api/questions'
 import { useAuthStore } from '../../stores/authStore'
+import {
+  filterBinary,
+  filterExact,
+  filterRange,
+  getUniqueConstraintValues,
+  hasConstraintDataForSkip,
+} from '../../lib/matcher'
 import type { CaseType, Constraint, Location, Offering, Provider } from '../../types/database'
 
 export type OfferingRow = Offering & {
@@ -38,79 +45,6 @@ interface HistoryEntry {
 
 function ts() {
   return new Date().toISOString().slice(11, 23)
-}
-
-function hasConstraintDataForSkip(offerings: OfferingRow[], c: Constraint): boolean {
-  if (c.type === 'range') {
-    const minK = c.mapped_key
-    const maxK = c.secondary_mapped_key
-    return offerings.some((o) => {
-      const cons = (o.constraints ?? {}) as Record<string, unknown>
-      const a = cons[minK]
-      const b = maxK ? cons[maxK] : undefined
-      const hasA = a !== null && a !== undefined && a !== ''
-      const hasB = maxK ? b !== null && b !== undefined && b !== '' : false
-      return hasA || hasB
-    })
-  }
-  const k = c.mapped_key
-  return offerings.some((o) => {
-    const cons = (o.constraints ?? {}) as Record<string, unknown>
-    const v = cons[k]
-    return v !== null && v !== undefined && v !== ''
-  })
-}
-
-function filterBinary(
-  offerings: OfferingRow[],
-  c: Constraint,
-  pickedYes: boolean
-): OfferingRow[] {
-  const targetMode = pickedYes ? c.yes_maps_to : c.no_maps_to
-  if (targetMode === 'both') {
-    return offerings
-  }
-  return offerings.filter((o) => {
-    const cons = (o.constraints ?? {}) as Record<string, unknown>
-    const v = cons[c.mapped_key]
-    if (targetMode === '1') {
-      return v === 1 || v === '1' || v === true
-    }
-    return v === undefined || v === null || v === 0 || v === '0' || v === false
-  })
-}
-
-function filterRange(offerings: OfferingRow[], c: Constraint, answer: number): OfferingRow[] {
-  const minKey = c.mapped_key
-  const maxKey = c.secondary_mapped_key ?? ''
-  return offerings.filter((o) => {
-    const cons = (o.constraints ?? {}) as Record<string, unknown>
-    const min = Number(cons[minKey] ?? 0)
-    const max = maxKey ? Number(cons[maxKey] ?? 999) : 999
-    return min <= answer && answer <= max
-  })
-}
-
-function filterExact(offerings: OfferingRow[], c: Constraint, answer: string): OfferingRow[] {
-  const key = c.mapped_key
-  const t = answer.trim().toLowerCase()
-  return offerings.filter((o) => {
-    const cons = (o.constraints ?? {}) as Record<string, unknown>
-    const v = cons[key]
-    return String(v ?? '').toLowerCase() === t
-  })
-}
-
-function getUniqueConstraintValues(offerings: OfferingRow[], mappedKey: string): string[] {
-  const set = new Set<string>()
-  for (const o of offerings) {
-    const cons = (o.constraints ?? {}) as Record<string, unknown>
-    const v = cons[mappedKey]
-    if (v !== null && v !== undefined && v !== '') {
-      set.add(String(v))
-    }
-  }
-  return [...set].sort((a, b) => a.localeCompare(b))
 }
 
 function dedupeByProvider(offerings: OfferingRow[]): OfferingRow[] {

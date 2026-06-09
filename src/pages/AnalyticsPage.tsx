@@ -46,6 +46,7 @@ interface WidgetSession {
 interface WidgetRef { id: string; name: string; status: string }
 interface CaseTypeRef { id: string; name: string }
 interface ProviderRef { id: string; name: string }
+interface QuestionRef { id: string; question_type: string }
 
 interface AnalyticsData {
   events: SessionEvent[]
@@ -53,17 +54,19 @@ interface AnalyticsData {
   widgets: WidgetRef[]
   caseTypes: CaseTypeRef[]
   providers: ProviderRef[]
+  questions: QuestionRef[]
 }
 
 // ─── Fetch ────────────────────────────────────────────────────────────────────
 
 async function fetchAnalyticsData(orgId: string): Promise<AnalyticsData> {
-  const [eventsRes, sessionsRes, widgetsRes, caseTypesRes, providersRes] = await Promise.all([
+  const [eventsRes, sessionsRes, widgetsRes, caseTypesRes, providersRes, questionsRes] = await Promise.all([
     supabase.from('widget_session_events').select('*').eq('org_id', orgId).order('created_at', { ascending: false }),
     supabase.from('widget_sessions').select('*').eq('org_id', orgId).order('created_at', { ascending: false }),
     supabase.from('widgets').select('id, name, status').eq('org_id', orgId).neq('status', 'archived'),
     supabase.from('case_types').select('id, name').eq('org_id', orgId),
     supabase.from('providers').select('id, name').eq('org_id', orgId),
+    supabase.from('questions').select('id, question_type').eq('org_id', orgId).eq('is_archived', false),
   ])
   if (eventsRes.error) throw new Error(eventsRes.error.message)
   if (sessionsRes.error) throw new Error(sessionsRes.error.message)
@@ -73,6 +76,7 @@ async function fetchAnalyticsData(orgId: string): Promise<AnalyticsData> {
     widgets: (widgetsRes.data ?? []) as WidgetRef[],
     caseTypes: (caseTypesRes.data ?? []) as CaseTypeRef[],
     providers: (providersRes.data ?? []) as ProviderRef[],
+    questions: (questionsRes.data ?? []) as QuestionRef[],
   }
 }
 
@@ -524,6 +528,88 @@ export default function AnalyticsPage() {
       .sort((a, b) => b.shown - a.shown || b.clicks - a.clicks)
   }, [dedupedSessions, data?.providers, providerNameById])
 
+  // ── Per-provider impression context — when a provider was shown, what was the typical session?
+  const providerImpressionStats = useMemo(() => {
+    const eventsBySession = new Map<string, SessionEvent[]>()
+    filteredEvents.forEach(e => {
+      if (!eventsBySession.has(e.session_id)) eventsBySession.set(e.session_id, [])
+      eventsBySession.get(e.session_id)!.push(e)
+    })
+
+    // Location: pinned to question_type='location' (structural). Age: still substring-matched.
+    const locationQuestionIds = new Set(
+      (data?.questions ?? []).filter(q => q.question_type === 'location').map(q => q.id),
+    )
+
+    const ageBucket = (raw: string): string => {
+      const n = Number(raw)
+      if (!Number.isFinite(n)) return raw
+      if (n < 13) return 'Under 13'
+      if (n < 20) return 'Teen'
+      const decade = Math.floor(n / 10) * 10
+      return `${decade}s`
+    }
+
+    type Slice = { caseType: string | null; location: string | null; age: string | null }
+    const sessionSlice = new Map<string, Slice>()
+    dedupedSessions.forEach(s => {
+      const evs = eventsBySession.get(s.session_id) ?? []
+      let location: string | null = null
+      let age: string | null = null
+      evs.forEach(e => {
+        if (!e.answer_text) return
+        if (!location && e.question_id && locationQuestionIds.has(e.question_id)) {
+          location = e.answer_text
+        }
+        if (!age && e.question_text) {
+          const q = e.question_text.toLowerCase()
+          if (q.includes('old') || q.includes('age')) age = ageBucket(e.answer_text)
+        }
+      })
+      const caseType = s.case_type_id ? caseTypeNameById.get(s.case_type_id) ?? null : null
+      sessionSlice.set(s.session_id, { caseType, location, age })
+    })
+
+    // 2) Per-provider aggregation: walk every session that showed each provider
+    type Counts = Map<string, number>
+    const perProvider = new Map<string, { shown: number; cases: Counts; locs: Counts; ages: Counts }>()
+    data?.providers.forEach(p => perProvider.set(p.id, { shown: 0, cases: new Map(), locs: new Map(), ages: new Map() }))
+    const bump = (m: Counts, key: string | null) => {
+      if (!key) return
+      m.set(key, (m.get(key) ?? 0) + 1)
+    }
+    dedupedSessions.forEach(s => {
+      const slice = sessionSlice.get(s.session_id)
+      if (!slice) return
+      ;(s.providers_shown ?? []).forEach(pid => {
+        const rec = perProvider.get(pid)
+        if (!rec) return
+        rec.shown += 1
+        bump(rec.cases, slice.caseType)
+        bump(rec.locs, slice.location)
+        bump(rec.ages, slice.age)
+      })
+    })
+
+    const top = (m: Counts): string | null => {
+      let best: string | null = null
+      let bestN = 0
+      m.forEach((n, k) => { if (n > bestN) { best = k; bestN = n } })
+      return best
+    }
+
+    return Array.from(perProvider.entries())
+      .map(([id, r]) => ({
+        id,
+        name: providerNameById.get(id) ?? 'Unknown',
+        shown: r.shown,
+        topCase: top(r.cases),
+        topLocation: top(r.locs),
+        topAge: top(r.ages),
+      }))
+      .sort((a, b) => b.shown - a.shown)
+  }, [dedupedSessions, filteredEvents, data?.providers, data?.questions, caseTypeNameById, providerNameById])
+
   // ── Session log — one row per session; restarts shown as labeled attempts when expanded
   const sessionLog = useMemo(() => {
     const map = new Map<string, { events: SessionEvent[]; session?: WidgetSession }>()
@@ -839,15 +925,49 @@ export default function AnalyticsPage() {
                     <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-medium text-slate-500">{i + 1}</span>
                     <span className="text-sm font-medium text-slate-800">{row.name}</span>
                   </div>
-                  <span className="text-sm tabular-nums text-slate-500">
-                    {row.shown} shown · {row.clicks} clicks{row.ctr !== null ? ` · ${Math.round(row.ctr * 100)}%` : ''}
-                  </span>
+                  <span className="text-sm tabular-nums text-slate-500">{row.clicks} clicks</span>
                 </div>
               ))}
             </div>
           )}
         </section>
       </div>
+
+      {/* Provider Impressions — when each provider was shown, what was the typical session? */}
+      <section className="mb-6 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 px-6 py-4">
+          <h2 className="font-semibold text-slate-900">Provider Impressions</h2>
+          <p className="mt-0.5 text-xs text-slate-500">How often each provider appeared in results, and the typical session context.</p>
+        </div>
+        {providerImpressionStats.length === 0 ? (
+          <p className="px-6 py-8 text-center text-sm text-slate-500">No data yet.</p>
+        ) : (
+          <div className="max-h-[480px] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-6 py-3 font-medium">Provider</th>
+                  <th className="px-6 py-3 font-medium tabular-nums">Shown</th>
+                  <th className="px-6 py-3 font-medium">Top Case Type</th>
+                  <th className="px-6 py-3 font-medium">Top Location</th>
+                  <th className="px-6 py-3 font-medium">Top Age</th>
+                </tr>
+              </thead>
+              <tbody>
+                {providerImpressionStats.map(row => (
+                  <tr key={row.id} className="border-t border-slate-100">
+                    <td className="px-6 py-3 font-medium text-slate-800">{row.name}</td>
+                    <td className="px-6 py-3 tabular-nums text-slate-700">{row.shown}</td>
+                    <td className="px-6 py-3 text-slate-700">{row.topCase ?? '—'}</td>
+                    <td className="px-6 py-3 text-slate-700">{row.topLocation ?? '—'}</td>
+                    <td className="px-6 py-3 text-slate-700">{row.topAge ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       {/* Session Log — full width, collapsed by default */}
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
