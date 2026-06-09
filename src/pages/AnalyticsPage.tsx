@@ -934,7 +934,7 @@ export default function AnalyticsPage() {
             <>
               <div className="flex-1">
                 {(showAllProviders ? providersByClicks : providersByClicks.slice(0, 10)).map((row, i) => (
-                  <div key={row.id} className="flex items-center justify-between border-b border-slate-100 px-6 py-3 last:border-0">
+                  <div key={row.id} className="flex min-h-[58px] items-center justify-between border-b border-slate-100 px-6 py-3 last:border-0">
                     <div className="flex items-center gap-2">
                       <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-medium text-slate-500">{i + 1}</span>
                       <span className="text-sm font-medium text-slate-800">{row.name}</span>
