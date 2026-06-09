@@ -1420,6 +1420,7 @@
         case_type_id: this.state.selectedCaseTypeId,
         answers: this.state.answers,
         results_count: this.state.activeOfferings.length,
+        providers_shown: Array.from(new Set(this.state.activeOfferings.map(function (o) { return o.provider_id }).filter(Boolean))),
         zero_results: zeroResults,
         providers_clicked: [],
       }, 'session(zero=' + zeroResults + ')')

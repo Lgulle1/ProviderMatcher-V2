@@ -86,6 +86,7 @@ serve(async (req) => {
       results_count: body.results_count ?? 0,
       zero_results: body.zero_results === true,
       providers_clicked: body.providers_clicked || [],
+      providers_shown: body.providers_shown || [],
     }
 
     if (existing) {

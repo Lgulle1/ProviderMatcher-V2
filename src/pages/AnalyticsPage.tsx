@@ -39,6 +39,7 @@ interface WidgetSession {
   results_count: number | null
   zero_results: boolean | null
   providers_clicked: string[]
+  providers_shown: string[]
   created_at: string
 }
 
@@ -499,17 +500,29 @@ export default function AnalyticsPage() {
       .sort((a, b) => b.count - a.count)
   }, [dedupedSessions, caseTypeNameById])
 
-  // ── Providers by clicks
+  // ── Providers by impressions + clicks (all providers, including never-shown)
   const providersByClicks = useMemo(() => {
-    const counts = new Map<string, number>()
+    const shown = new Map<string, number>()
+    const clicks = new Map<string, number>()
+    data?.providers.forEach(p => { shown.set(p.id, 0); clicks.set(p.id, 0) })
     dedupedSessions.forEach(s => {
-      (s.providers_clicked ?? []).forEach(pid => counts.set(pid, (counts.get(pid) ?? 0) + 1))
+      (s.providers_shown ?? []).forEach(pid => shown.set(pid, (shown.get(pid) ?? 0) + 1))
+      ;(s.providers_clicked ?? []).forEach(pid => clicks.set(pid, (clicks.get(pid) ?? 0) + 1))
     })
-    return Array.from(counts.entries())
-      .map(([id, clicks]) => ({ id, clicks, name: providerNameById.get(id) ?? 'Unknown' }))
-      .sort((a, b) => b.clicks - a.clicks)
-      .slice(0, 10)
-  }, [dedupedSessions, providerNameById])
+    return Array.from(shown.keys())
+      .map(id => {
+        const s = shown.get(id) ?? 0
+        const c = clicks.get(id) ?? 0
+        return {
+          id,
+          shown: s,
+          clicks: c,
+          ctr: s > 0 ? c / s : null,
+          name: providerNameById.get(id) ?? 'Unknown',
+        }
+      })
+      .sort((a, b) => b.shown - a.shown || b.clicks - a.clicks)
+  }, [dedupedSessions, data?.providers, providerNameById])
 
   // ── Session log — one row per session; restarts shown as labeled attempts when expanded
   const sessionLog = useMemo(() => {
@@ -796,8 +809,8 @@ export default function AnalyticsPage() {
           {sessionsByCaseType.length === 0 ? (
             <p className="px-6 py-8 text-center text-sm text-slate-500">No data yet.</p>
           ) : (
-            <div>
-              {sessionsByCaseType.slice(0, 10).map(row => (
+            <div className="max-h-[480px] overflow-y-auto">
+              {sessionsByCaseType.map(row => (
                 <div key={row.id} className="border-b border-slate-100 px-6 py-3 last:border-0">
                   <div className="mb-1.5 flex items-center justify-between">
                     <span className="text-sm font-medium text-slate-800">{row.name}</span>
@@ -819,14 +832,16 @@ export default function AnalyticsPage() {
           {providersByClicks.length === 0 ? (
             <p className="px-6 py-8 text-center text-sm text-slate-500">No clicks yet.</p>
           ) : (
-            <div>
+            <div className="max-h-[480px] overflow-y-auto">
               {providersByClicks.map((row, i) => (
                 <div key={row.id} className="flex items-center justify-between border-b border-slate-100 px-6 py-3 last:border-0">
                   <div className="flex items-center gap-2">
                     <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-medium text-slate-500">{i + 1}</span>
                     <span className="text-sm font-medium text-slate-800">{row.name}</span>
                   </div>
-                  <span className="text-sm tabular-nums text-slate-500">{row.clicks} clicks</span>
+                  <span className="text-sm tabular-nums text-slate-500">
+                    {row.shown} shown · {row.clicks} clicks{row.ctr !== null ? ` · ${Math.round(row.ctr * 100)}%` : ''}
+                  </span>
                 </div>
               ))}
             </div>
