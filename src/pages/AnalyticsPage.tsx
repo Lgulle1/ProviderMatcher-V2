@@ -890,7 +890,7 @@ export default function AnalyticsPage() {
       </section>
 
       {/* Case Type + Providers — side by side (compact tables, makes sense together) */}
-      <div className="mb-6 grid gap-6 lg:grid-cols-2">
+      <div className="mb-6 grid items-start gap-6 lg:grid-cols-2">
         <section className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-200 px-6 py-4">
             <h2 className="font-semibold text-slate-900">Sessions by Case Type</h2>
