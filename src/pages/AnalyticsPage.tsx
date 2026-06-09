@@ -304,6 +304,9 @@ export default function AnalyticsPage() {
   const [funnelMode, setFunnelMode] = useState<FunnelMode>('combined')
   const [expandedRowKey, setExpandedRowKey] = useState<string | null>(null)
   const [showAllSessions, setShowAllSessions] = useState(false)
+  const [showAllCaseTypes, setShowAllCaseTypes] = useState(false)
+  const [showAllProviders, setShowAllProviders] = useState(false)
+  const [showAllImpressions, setShowAllImpressions] = useState(false)
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['analytics-v2', orgId],
@@ -895,19 +898,29 @@ export default function AnalyticsPage() {
           {sessionsByCaseType.length === 0 ? (
             <p className="px-6 py-8 text-center text-sm text-slate-500">No data yet.</p>
           ) : (
-            <div className="max-h-[480px] overflow-y-auto">
-              {sessionsByCaseType.map(row => (
-                <div key={row.id} className="border-b border-slate-100 px-6 py-3 last:border-0">
-                  <div className="mb-1.5 flex items-center justify-between">
-                    <span className="text-sm font-medium text-slate-800">{row.name}</span>
-                    <span className="text-xs text-slate-500">{row.count} · {row.pct}%</span>
+            <>
+              <div>
+                {(showAllCaseTypes ? sessionsByCaseType : sessionsByCaseType.slice(0, 10)).map(row => (
+                  <div key={row.id} className="border-b border-slate-100 px-6 py-3 last:border-0">
+                    <div className="mb-1.5 flex items-center justify-between">
+                      <span className="text-sm font-medium text-slate-800">{row.name}</span>
+                      <span className="text-xs text-slate-500">{row.count} · {row.pct}%</span>
+                    </div>
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                      <div className="h-full rounded-full bg-indigo-400" style={{ width: `${row.pct}%` }} />
+                    </div>
                   </div>
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-                    <div className="h-full rounded-full bg-indigo-400" style={{ width: `${row.pct}%` }} />
-                  </div>
+                ))}
+              </div>
+              {sessionsByCaseType.length > 10 && (
+                <div className="border-t border-slate-100 px-6 py-3 text-center">
+                  <button type="button" onClick={() => setShowAllCaseTypes(v => !v)}
+                    className="text-sm font-medium text-indigo-600 hover:text-indigo-700">
+                    {showAllCaseTypes ? 'Show less' : `Show all ${sessionsByCaseType.length} case types`}
+                  </button>
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
         </section>
 
@@ -918,17 +931,27 @@ export default function AnalyticsPage() {
           {providersByClicks.length === 0 ? (
             <p className="px-6 py-8 text-center text-sm text-slate-500">No clicks yet.</p>
           ) : (
-            <div className="max-h-[480px] overflow-y-auto">
-              {providersByClicks.map((row, i) => (
-                <div key={row.id} className="flex items-center justify-between border-b border-slate-100 px-6 py-3 last:border-0">
-                  <div className="flex items-center gap-2">
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-medium text-slate-500">{i + 1}</span>
-                    <span className="text-sm font-medium text-slate-800">{row.name}</span>
+            <>
+              <div>
+                {(showAllProviders ? providersByClicks : providersByClicks.slice(0, 10)).map((row, i) => (
+                  <div key={row.id} className="flex items-center justify-between border-b border-slate-100 px-6 py-3 last:border-0">
+                    <div className="flex items-center gap-2">
+                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-medium text-slate-500">{i + 1}</span>
+                      <span className="text-sm font-medium text-slate-800">{row.name}</span>
+                    </div>
+                    <span className="text-sm tabular-nums text-slate-500">{row.clicks} clicks</span>
                   </div>
-                  <span className="text-sm tabular-nums text-slate-500">{row.clicks} clicks</span>
+                ))}
+              </div>
+              {providersByClicks.length > 10 && (
+                <div className="border-t border-slate-100 px-6 py-3 text-center">
+                  <button type="button" onClick={() => setShowAllProviders(v => !v)}
+                    className="text-sm font-medium text-indigo-600 hover:text-indigo-700">
+                    {showAllProviders ? 'Show less' : `Show all ${providersByClicks.length} providers`}
+                  </button>
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
         </section>
       </div>
@@ -942,30 +965,40 @@ export default function AnalyticsPage() {
         {providerImpressionStats.length === 0 ? (
           <p className="px-6 py-8 text-center text-sm text-slate-500">No data yet.</p>
         ) : (
-          <div className="max-h-[480px] overflow-y-auto">
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-6 py-3 font-medium">Provider</th>
-                  <th className="px-6 py-3 font-medium tabular-nums">Shown</th>
-                  <th className="px-6 py-3 font-medium">Top Case Type</th>
-                  <th className="px-6 py-3 font-medium">Top Location</th>
-                  <th className="px-6 py-3 font-medium">Top Age</th>
-                </tr>
-              </thead>
-              <tbody>
-                {providerImpressionStats.map(row => (
-                  <tr key={row.id} className="border-t border-slate-100">
-                    <td className="px-6 py-3 font-medium text-slate-800">{row.name}</td>
-                    <td className="px-6 py-3 tabular-nums text-slate-700">{row.shown}</td>
-                    <td className="px-6 py-3 text-slate-700">{row.topCase ?? '—'}</td>
-                    <td className="px-6 py-3 text-slate-700">{row.topLocation ?? '—'}</td>
-                    <td className="px-6 py-3 text-slate-700">{row.topAge ?? '—'}</td>
+          <>
+            <div>
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-6 py-3 font-medium">Provider</th>
+                    <th className="px-6 py-3 font-medium tabular-nums">Shown</th>
+                    <th className="px-6 py-3 font-medium">Top Case Type</th>
+                    <th className="px-6 py-3 font-medium">Top Location</th>
+                    <th className="px-6 py-3 font-medium">Top Age</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {(showAllImpressions ? providerImpressionStats : providerImpressionStats.slice(0, 10)).map(row => (
+                    <tr key={row.id} className="border-t border-slate-100">
+                      <td className="px-6 py-3 font-medium text-slate-800">{row.name}</td>
+                      <td className="px-6 py-3 tabular-nums text-slate-700">{row.shown}</td>
+                      <td className="px-6 py-3 text-slate-700">{row.topCase ?? '—'}</td>
+                      <td className="px-6 py-3 text-slate-700">{row.topLocation ?? '—'}</td>
+                      <td className="px-6 py-3 text-slate-700">{row.topAge ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {providerImpressionStats.length > 10 && (
+              <div className="border-t border-slate-100 px-6 py-3 text-center">
+                <button type="button" onClick={() => setShowAllImpressions(v => !v)}
+                  className="text-sm font-medium text-indigo-600 hover:text-indigo-700">
+                  {showAllImpressions ? 'Show less' : `Show all ${providerImpressionStats.length} providers`}
+                </button>
+              </div>
+            )}
+          </>
         )}
       </section>
 
