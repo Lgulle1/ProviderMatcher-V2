@@ -891,7 +891,7 @@ export default function AnalyticsPage() {
 
       {/* Case Type + Providers — side by side (compact tables, makes sense together) */}
       <div className="mb-6 grid gap-6 lg:grid-cols-2">
-        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <section className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-200 px-6 py-4">
             <h2 className="font-semibold text-slate-900">Sessions by Case Type</h2>
           </div>
@@ -899,7 +899,7 @@ export default function AnalyticsPage() {
             <p className="px-6 py-8 text-center text-sm text-slate-500">No data yet.</p>
           ) : (
             <>
-              <div>
+              <div className="flex-1">
                 {(showAllCaseTypes ? sessionsByCaseType : sessionsByCaseType.slice(0, 10)).map(row => (
                   <div key={row.id} className="border-b border-slate-100 px-6 py-3 last:border-0">
                     <div className="mb-1.5 flex items-center justify-between">
@@ -924,7 +924,7 @@ export default function AnalyticsPage() {
           )}
         </section>
 
-        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <section className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-200 px-6 py-4">
             <h2 className="font-semibold text-slate-900">Top Providers</h2>
           </div>
@@ -932,7 +932,7 @@ export default function AnalyticsPage() {
             <p className="px-6 py-8 text-center text-sm text-slate-500">No clicks yet.</p>
           ) : (
             <>
-              <div>
+              <div className="flex-1">
                 {(showAllProviders ? providersByClicks : providersByClicks.slice(0, 10)).map((row, i) => (
                   <div key={row.id} className="flex items-center justify-between border-b border-slate-100 px-6 py-3 last:border-0">
                     <div className="flex items-center gap-2">
