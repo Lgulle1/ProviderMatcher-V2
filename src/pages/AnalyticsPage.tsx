@@ -933,15 +933,27 @@ export default function AnalyticsPage() {
           ) : (
             <>
               <div className="flex-1">
-                {(showAllProviders ? providersByClicks : providersByClicks.slice(0, 10)).map((row, i) => (
-                  <div key={row.id} className="flex min-h-[58px] items-center justify-between border-b border-slate-100 px-6 py-3 last:border-0">
-                    <div className="flex items-center gap-2">
-                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-medium text-slate-500">{i + 1}</span>
-                      <span className="text-sm font-medium text-slate-800">{row.name}</span>
-                    </div>
-                    <span className="text-sm tabular-nums text-slate-500">{row.clicks} clicks</span>
-                  </div>
-                ))}
+                {(() => {
+                  const visible = showAllProviders ? providersByClicks : providersByClicks.slice(0, 10)
+                  const topClicks = visible[0]?.clicks ?? 0
+                  return visible.map((row, i) => {
+                    const pct = topClicks > 0 ? Math.round((row.clicks / topClicks) * 100) : 0
+                    return (
+                      <div key={row.id} className="border-b border-slate-100 px-6 py-3 last:border-0">
+                        <div className="mb-1.5 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-medium text-slate-500">{i + 1}</span>
+                            <span className="text-sm font-medium text-slate-800">{row.name}</span>
+                          </div>
+                          <span className="text-xs text-slate-500">{row.clicks} clicks</span>
+                        </div>
+                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                          <div className="h-full rounded-full bg-indigo-400" style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    )
+                  })
+                })()}
               </div>
               {providersByClicks.length > 10 && (
                 <div className="border-t border-slate-100 px-6 py-3 text-center">
