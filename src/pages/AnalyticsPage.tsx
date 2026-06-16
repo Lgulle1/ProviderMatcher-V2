@@ -59,20 +59,39 @@ interface AnalyticsData {
 
 // ─── Fetch ────────────────────────────────────────────────────────────────────
 
+// PostgREST caps a single request at ~1,000 rows, so we page through the full
+// result set in chunks to avoid silently loading only the newest 1,000 rows.
+const PAGE_SIZE = 1000
+
+async function fetchAllRows<T>(table: string, orgId: string, columns = '*'): Promise<T[]> {
+  const rows: T[] = []
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from(table)
+      .select(columns)
+      .eq('org_id', orgId)
+      .order('created_at', { ascending: false })
+      .range(from, from + PAGE_SIZE - 1)
+    if (error) throw new Error(error.message)
+    const batch = (data ?? []) as T[]
+    rows.push(...batch)
+    if (batch.length < PAGE_SIZE) break
+  }
+  return rows
+}
+
 async function fetchAnalyticsData(orgId: string): Promise<AnalyticsData> {
-  const [eventsRes, sessionsRes, widgetsRes, caseTypesRes, providersRes, questionsRes] = await Promise.all([
-    supabase.from('widget_session_events').select('*').eq('org_id', orgId).order('created_at', { ascending: false }),
-    supabase.from('widget_sessions').select('*').eq('org_id', orgId).order('created_at', { ascending: false }),
+  const [events, sessions, widgetsRes, caseTypesRes, providersRes, questionsRes] = await Promise.all([
+    fetchAllRows<SessionEvent>('widget_session_events', orgId),
+    fetchAllRows<WidgetSession>('widget_sessions', orgId),
     supabase.from('widgets').select('id, name, status').eq('org_id', orgId).neq('status', 'archived'),
     supabase.from('case_types').select('id, name').eq('org_id', orgId),
     supabase.from('providers').select('id, name').eq('org_id', orgId),
     supabase.from('questions').select('id, question_type').eq('org_id', orgId).eq('is_archived', false),
   ])
-  if (eventsRes.error) throw new Error(eventsRes.error.message)
-  if (sessionsRes.error) throw new Error(sessionsRes.error.message)
   return {
-    events: (eventsRes.data ?? []) as SessionEvent[],
-    sessions: (sessionsRes.data ?? []) as WidgetSession[],
+    events,
+    sessions,
     widgets: (widgetsRes.data ?? []) as WidgetRef[],
     caseTypes: (caseTypesRes.data ?? []) as CaseTypeRef[],
     providers: (providersRes.data ?? []) as ProviderRef[],
@@ -470,11 +489,24 @@ export default function AnalyticsPage() {
 
   // ── Sessions over time
   const sessionsOverTime = useMemo(() => {
-    const dayCount = datePreset === '7d' ? 7 : datePreset === '90d' ? 90 : 30
+    // Build the day buckets from the active date window so custom ranges render
+    // their actual span instead of always defaulting to the last 30 days.
     const today = new Date(); today.setHours(0, 0, 0, 0)
+    let start: Date
+    let end: Date
+    if (datePreset === 'custom') {
+      end = dateEnd ? new Date(dateEnd) : new Date(today)
+      end.setHours(0, 0, 0, 0)
+      start = dateStart ? new Date(dateStart) : new Date(end)
+      start.setHours(0, 0, 0, 0)
+      if (start > end) start = new Date(end)
+    } else {
+      const dayCount = datePreset === '7d' ? 7 : datePreset === '90d' ? 90 : 30
+      end = new Date(today)
+      start = new Date(today); start.setDate(today.getDate() - (dayCount - 1))
+    }
     const days: { key: string; label: string }[] = []
-    for (let i = dayCount - 1; i >= 0; i--) {
-      const d = new Date(today); d.setDate(today.getDate() - i)
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
       days.push({ key: dayKey(d), label: formatDayLabel(d) })
     }
     const byDay = new Map(days.map(d => [d.key, new Set<string>()]))
@@ -488,7 +520,7 @@ export default function AnalyticsPage() {
       labels: days.map(d => d.label),
       counts: days.map(d => byDay.get(d.key)?.size ?? 0),
     }
-  }, [filteredEvents, datePreset])
+  }, [filteredEvents, datePreset, dateStart, dateEnd])
 
   // ── Sessions by case type
   const sessionsByCaseType = useMemo(() => {
@@ -692,7 +724,9 @@ export default function AnalyticsPage() {
         const totalRuns = runs.length
         const restarted = totalRuns > 1
 
-        const runData = runs.map((r, i) => buildRunData(r, i))
+        const runData = runs.length > 0
+          ? runs.map((r, i) => buildRunData(r, i))
+          : [{ runIndex: 0, endsWithRestart: false, booked: false, called: false, zeroResults: false, wentBack: false, dropOffPoint: 'Opened — no interaction', questionFlow: [] as SessionEvent[] }]
 
         // Legacy fallback: sessions recorded before the widget emitted per-attempt
         // zero_results_shown events only have a session-level flag. Attribute it to
@@ -705,12 +739,14 @@ export default function AnalyticsPage() {
             const end = new Date(r[r.length - 1].created_at).getTime()
             return t >= start - 2000 && t <= end + 5000
           })
-          if (idx === -1) idx = totalRuns - 1
-          runData[idx].zeroResults = true
-          if (!runData[idx].endsWithRestart) runData[idx].dropOffPoint = 'No Results'
+          if (idx === -1) idx = runData.length - 1
+          if (idx >= 0) {
+            runData[idx].zeroResults = true
+            if (!runData[idx].endsWithRestart) runData[idx].dropOffPoint = 'No Results'
+          }
         }
 
-        const lastRun = runData[totalRuns - 1]
+        const lastRun = runData[runData.length - 1]
 
         const openedAt = sortedEvents.find(e => e.event_type === 'widget_opened')?.created_at
           ?? sortedEvents[0]?.created_at ?? d.session?.created_at ?? ''
