@@ -916,7 +916,8 @@ SET
   file_size_limit = EXCLUDED.file_size_limit,
   allowed_mime_types = EXCLUDED.allowed_mime_types;
 
-ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+-- storage.objects is managed by Supabase and already has RLS enabled.
+-- The project postgres role is not the table owner, so do not ALTER this table.
 
 CREATE POLICY provider_images_public_read
   ON storage.objects
