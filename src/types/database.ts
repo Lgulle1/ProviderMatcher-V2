@@ -7,6 +7,8 @@ export interface Organization {
   onboarding_completed: boolean
   default_booking_mode: 'simple' | 'advanced'
   default_phone_mode: 'simple' | 'advanced'
+  booking_fairness_scope: 'org' | 'widget'
+  booking_fairness_window: 'all' | '30d' | '7d'
   created_at: string
   updated_at: string
 }

@@ -57,6 +57,28 @@ serve(async (req) => {
       ? (snapshot.scoped_question_ids as string[])
       : null
 
+    const orgQuery = Promise.resolve(
+      supabase
+        .from('organizations')
+        .select('fallback_phone,fallback_message,allowed_domains,default_booking_mode,default_phone_mode,booking_fairness_scope,booking_fairness_window')
+        .eq('id', orgId)
+        .single()
+    )
+
+    const widgetSessionsQuery = orgQuery.then(({ data: org }) => {
+      let query = supabase.from('widget_sessions').select('providers_clicked').eq('org_id', orgId)
+      if (org?.booking_fairness_scope === 'widget') {
+        query = query.eq('widget_id', widgetId)
+      }
+      const fairnessWindow = org?.booking_fairness_window
+      if (fairnessWindow === '30d' || fairnessWindow === '7d') {
+        const days = fairnessWindow === '30d' ? 30 : 7
+        const cutoffIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
+        query = query.gte('created_at', cutoffIso)
+      }
+      return query
+    })
+
     const [
       { data: org },
       { data: allProviders },
@@ -66,8 +88,9 @@ serve(async (req) => {
       { data: locations },
       { data: constraints },
       { data: allQuestions },
+      { data: widgetSessions },
     ] = await Promise.all([
-      supabase.from('organizations').select('fallback_phone,fallback_message,allowed_domains').eq('id', orgId).single(),
+      orgQuery,
       supabase.from('providers').select('*').eq('org_id', orgId).eq('is_archived', false),
       supabase.from('offerings').select('*').eq('org_id', orgId).eq('is_archived', false),
       supabase.from('case_types').select('*').eq('org_id', orgId).eq('is_archived', false).order('name'),
@@ -75,7 +98,16 @@ serve(async (req) => {
       supabase.from('locations').select('*').eq('org_id', orgId).eq('is_archived', false),
       supabase.from('constraints').select('*').eq('org_id', orgId).eq('is_archived', false),
       supabase.from('questions').select('*').eq('org_id', orgId).eq('is_archived', false).order('order_rank'),
+      widgetSessionsQuery,
     ])
+
+    const providerBookingCounts: Record<string, number> = {}
+    for (const row of widgetSessions ?? []) {
+      const clicked = (row.providers_clicked ?? []) as string[]
+      for (const providerId of clicked) {
+        providerBookingCounts[providerId] = (providerBookingCounts[providerId] ?? 0) + 1
+      }
+    }
 
     const providers = scopedProviderIds
       ? (allProviders ?? []).filter((p) => scopedProviderIds.includes(p.id))
@@ -138,6 +170,7 @@ serve(async (req) => {
         constraints: constraints ?? [],
         questions,
         providerLocations,
+        providerBookingCounts,
       }),
       {
         headers: {

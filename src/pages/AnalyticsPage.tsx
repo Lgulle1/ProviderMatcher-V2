@@ -10,6 +10,8 @@ import {
   TrendingDown,
   Phone,
   BookOpen,
+  ListOrdered,
+  Eye,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../stores/authStore'
@@ -41,6 +43,8 @@ interface WidgetSession {
   providers_clicked: string[]
   providers_shown: string[]
   created_at: string
+  results_positions?: { provider_id: string; position: number; booking_count_at_time: number }[]
+  clicks_detail?: { provider_id: string; position_at_click: number | null; click_order: number; clicked_at: string }[]
 }
 
 interface WidgetRef { id: string; name: string; status: string }
@@ -326,6 +330,7 @@ export default function AnalyticsPage() {
   const [showAllCaseTypes, setShowAllCaseTypes] = useState(false)
   const [showAllProviders, setShowAllProviders] = useState(false)
   const [showAllImpressions, setShowAllImpressions] = useState(false)
+  const [showAllAppearance, setShowAllAppearance] = useState(false)
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['analytics-v2', orgId],
@@ -543,25 +548,91 @@ export default function AnalyticsPage() {
   const providersByClicks = useMemo(() => {
     const shown = new Map<string, number>()
     const clicks = new Map<string, number>()
+    const positionSums = new Map<string, { sum: number; count: number }>()
     data?.providers.forEach(p => { shown.set(p.id, 0); clicks.set(p.id, 0) })
     dedupedSessions.forEach(s => {
       (s.providers_shown ?? []).forEach(pid => shown.set(pid, (shown.get(pid) ?? 0) + 1))
       ;(s.providers_clicked ?? []).forEach(pid => clicks.set(pid, (clicks.get(pid) ?? 0) + 1))
+      ;(s.results_positions ?? []).forEach(rp => {
+        const rec = positionSums.get(rp.provider_id) ?? { sum: 0, count: 0 }
+        rec.sum += rp.position
+        rec.count += 1
+        positionSums.set(rp.provider_id, rec)
+      })
     })
     return Array.from(shown.keys())
       .map(id => {
         const s = shown.get(id) ?? 0
         const c = clicks.get(id) ?? 0
+        const posRec = positionSums.get(id)
+        const avgPosition = posRec && posRec.count > 0
+          ? Math.round((posRec.sum / posRec.count) * 10) / 10
+          : null
         return {
           id,
           shown: s,
           clicks: c,
           ctr: s > 0 ? c / s : null,
+          avgPosition,
           name: providerNameById.get(id) ?? 'Unknown',
         }
       })
       .sort((a, b) => b.clicks - a.clicks || b.shown - a.shown)
   }, [dedupedSessions, data?.providers, providerNameById])
+
+  const positionPerformance = useMemo(() => {
+    const shownAt = new Map<number, number>()
+    const clickedAt = new Map<number, number>()
+    for (let p = 1; p <= 11; p++) {
+      shownAt.set(p, 0)
+      clickedAt.set(p, 0)
+    }
+    const bucketPosition = (pos: number) => (pos <= 10 ? pos : 11)
+
+    dedupedSessions.forEach(s => {
+      ;(s.results_positions ?? []).forEach(rp => {
+        const key = bucketPosition(rp.position)
+        shownAt.set(key, (shownAt.get(key) ?? 0) + 1)
+      })
+      ;(s.clicks_detail ?? []).forEach(cd => {
+        if (cd.position_at_click == null) return
+        const key = bucketPosition(cd.position_at_click)
+        clickedAt.set(key, (clickedAt.get(key) ?? 0) + 1)
+      })
+    })
+
+    return Array.from({ length: 11 }, (_, i) => {
+      const position = i + 1
+      const shown = shownAt.get(position) ?? 0
+      const clicked = clickedAt.get(position) ?? 0
+      return {
+        position,
+        shown,
+        clicked,
+        clickRate: shown > 0 ? clicked / shown : null,
+      }
+    })
+  }, [dedupedSessions])
+
+  const clicksPerSessionHistogram = useMemo(() => {
+    let single = 0
+    let twoThree = 0
+    let fourPlus = 0
+    dedupedSessions.forEach(s => {
+      const n = (s.clicks_detail ?? []).length
+      if (n === 0) return
+      if (n === 1) single++
+      else if (n <= 3) twoThree++
+      else fourPlus++
+    })
+    const total = single + twoThree + fourPlus
+    const pct = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0)
+    return [
+      { label: 'Single click', count: single, pct: pct(single) },
+      { label: '2-3 clicks', count: twoThree, pct: pct(twoThree) },
+      { label: '4+ clicks', count: fourPlus, pct: pct(fourPlus) },
+    ]
+  }, [dedupedSessions])
 
   // ── Per-provider impression context — when a provider was shown, what was the typical session?
   const providerImpressionStats = useMemo(() => {
@@ -1049,6 +1120,122 @@ export default function AnalyticsPage() {
           </>
         )}
       </section>
+
+      {/* Position performance, provider appearance, clicks per session */}
+      <div className="mb-6 grid items-start gap-6 lg:grid-cols-3">
+        <section className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 px-6 py-4">
+            <div className="flex items-center gap-2">
+              <ListOrdered className="h-4 w-4 text-indigo-600" aria-hidden />
+              <h2 className="font-semibold text-slate-900">Position Performance</h2>
+            </div>
+            <p className="mt-0.5 text-xs text-slate-500">How often each result slot was shown and clicked.</p>
+          </div>
+          {positionPerformance.every(r => r.shown === 0) ? (
+            <p className="px-6 py-8 text-center text-sm text-slate-500">No position data yet.</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-6 py-3 font-medium">Position</th>
+                  <th className="px-6 py-3 font-medium tabular-nums">Shown</th>
+                  <th className="px-6 py-3 font-medium tabular-nums">Clicked</th>
+                  <th className="px-6 py-3 font-medium tabular-nums">Click Rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                {positionPerformance.map(row => (
+                  <tr key={row.position} className="border-t border-slate-100">
+                    <td className="px-6 py-3 font-medium text-slate-800">{row.position === 11 ? '11+' : row.position}</td>
+                    <td className="px-6 py-3 tabular-nums text-slate-700">{row.shown}</td>
+                    <td className="px-6 py-3 tabular-nums text-slate-700">{row.clicked}</td>
+                    <td className="px-6 py-3 tabular-nums text-slate-700">
+                      {row.clickRate != null ? `${Math.round(row.clickRate * 100)}%` : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
+
+        <section className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 px-6 py-4">
+            <div className="flex items-center gap-2">
+              <Eye className="h-4 w-4 text-indigo-600" aria-hidden />
+              <h2 className="font-semibold text-slate-900">Provider Appearance Report</h2>
+            </div>
+            <p className="mt-0.5 text-xs text-slate-500">Impressions, clicks, CTR, and average list position per provider.</p>
+          </div>
+          {providersByClicks.length === 0 ? (
+            <p className="px-6 py-8 text-center text-sm text-slate-500">No data yet.</p>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-6 py-3 font-medium">Provider</th>
+                      <th className="px-6 py-3 font-medium tabular-nums">Shown</th>
+                      <th className="px-6 py-3 font-medium tabular-nums">Clicks</th>
+                      <th className="px-6 py-3 font-medium tabular-nums">CTR</th>
+                      <th className="px-6 py-3 font-medium tabular-nums">Avg Position</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(showAllAppearance ? providersByClicks : providersByClicks.slice(0, 10)).map(row => (
+                      <tr key={row.id} className="border-t border-slate-100">
+                        <td className="px-6 py-3 font-medium text-slate-800">{row.name}</td>
+                        <td className="px-6 py-3 tabular-nums text-slate-700">{row.shown}</td>
+                        <td className="px-6 py-3 tabular-nums text-slate-700">{row.clicks}</td>
+                        <td className="px-6 py-3 tabular-nums text-slate-700">
+                          {row.ctr != null ? `${Math.round(row.ctr * 100)}%` : '—'}
+                        </td>
+                        <td className="px-6 py-3 tabular-nums text-slate-700">{row.avgPosition ?? '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {providersByClicks.length > 10 && (
+                <div className="border-t border-slate-100 px-6 py-3 text-center">
+                  <button type="button" onClick={() => setShowAllAppearance(v => !v)}
+                    className="text-sm font-medium text-indigo-600 hover:text-indigo-700">
+                    {showAllAppearance ? 'Show less' : `Show all ${providersByClicks.length} providers`}
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </section>
+
+        <section className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 px-6 py-4">
+            <div className="flex items-center gap-2">
+              <MousePointerClick className="h-4 w-4 text-indigo-600" aria-hidden />
+              <h2 className="font-semibold text-slate-900">Clicks per Session</h2>
+            </div>
+            <p className="mt-0.5 text-xs text-slate-500">Sessions with at least one provider click, by click count.</p>
+          </div>
+          {clicksPerSessionHistogram.every(b => b.count === 0) ? (
+            <p className="px-6 py-8 text-center text-sm text-slate-500">No click sessions yet.</p>
+          ) : (
+            <div className="flex-1">
+              {clicksPerSessionHistogram.map(row => (
+                <div key={row.label} className="border-b border-slate-100 px-6 py-3 last:border-0">
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <span className="text-sm font-medium text-slate-800">{row.label}</span>
+                    <span className="text-xs text-slate-500">{row.count} · {row.pct}%</span>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                    <div className="h-full rounded-full bg-indigo-400" style={{ width: `${row.pct}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
 
       {/* Session Log — full width, collapsed by default */}
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">

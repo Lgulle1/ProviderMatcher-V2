@@ -16,17 +16,6 @@
     })
   }
 
-  function fisherYatesShuffle(arr) {
-    var a = arr.slice()
-    for (var i = a.length - 1; i > 0; i--) {
-      var j = Math.floor(Math.random() * (i + 1))
-      var tmp = a[i]
-      a[i] = a[j]
-      a[j] = tmp
-    }
-    return a
-  }
-
   /** Matches LogicTester: range needs min and/or max column populated to count as “has data”. */
   function hasConstraintDataForSkip(offerings, c) {
     if (c.type === 'range') {
@@ -126,6 +115,9 @@
       offeringsBeforeQuestion: null,
       history: [],
       sessionId: generateUUID(),
+      clickOrder: 0,
+      resultsPositions: [],
+      scrollDepth: null,
     },
 
     init: function () {
@@ -347,6 +339,13 @@
         offeringsBeforeBypass: null,
         history: [],
         sessionId: existingSessionId,
+        clickOrder: 0,
+        resultsPositions: [],
+        scrollDepth: null,
+      }
+      if (this._scrollObserver) {
+        this._scrollObserver.disconnect()
+        this._scrollObserver = null
       }
     },
 
@@ -368,6 +367,13 @@
       this.state.bypassMode = false
       this.state.bypassResumeIndex = null
       this.state.offeringsBeforeBypass = null
+      this.state.clickOrder = 0
+      this.state.resultsPositions = []
+      this.state.scrollDepth = null
+      if (this._scrollObserver) {
+        this._scrollObserver.disconnect()
+        this._scrollObserver = null
+      }
       this.renderQuestion()
     },
 
@@ -798,6 +804,8 @@
       // Record the outcome before any DOM rendering, and emit a per-attempt event
       // so the log can attribute "no results" to the exact attempt that hit it.
       this.trackEvent('zero_results_shown')
+      this.state.resultsPositions = []
+      this.state.scrollDepth = null
       this.trackSession(true)
       var body = this.shadow.getElementById('pm-body')
       if (!body) return
@@ -901,6 +909,38 @@
         this.showZeroResults()
         return
       }
+      var bookingCounts = (this.data && this.data.providerBookingCounts) || {}
+      unique.sort(function (a, b) {
+        return (bookingCounts[a.provider.id] || 0) - (bookingCounts[b.provider.id] || 0)
+      })
+      // Shuffle within groups of equal booking count so ties aren't stuck in a
+      // fixed order (e.g. every 0-booking provider gets an equal shot at
+      // position 1, not just whichever the DB happens to return first).
+      var i = 0
+      while (i < unique.length) {
+        var count = bookingCounts[unique[i].provider.id] || 0
+        var j = i + 1
+        while (j < unique.length && (bookingCounts[unique[j].provider.id] || 0) === count) {
+          j++
+        }
+        for (var k = j - 1; k > i; k--) {
+          var r = i + Math.floor(Math.random() * (k - i + 1))
+          var tmp = unique[k]
+          unique[k] = unique[r]
+          unique[r] = tmp
+        }
+        i = j
+      }
+      var resultsPositions = unique.map(function (item, i) {
+        return {
+          provider_id: item.provider.id,
+          position: i + 1,
+          booking_count_at_time: bookingCounts[item.provider.id] || 0,
+        }
+      })
+      this.state.resultsPositions = resultsPositions
+      this.state.clickOrder = 0
+      this.state.scrollDepth = null
       // Record the outcome the moment it's decided — before any DOM rendering, so
       // a render error can never prevent the log from recording results were shown.
       // answer_text distinguishes the guided "matched" list from the "browse all"
@@ -910,9 +950,19 @@
       var body = this.shadow.getElementById('pm-body')
       if (!body) return
       body.innerHTML = ''
-      unique = fisherYatesShuffle(unique)
+      var resultsShownAt = Date.now()
+      var positionByProvider = {}
+      resultsPositions.forEach(function (p) {
+        positionByProvider[p.provider_id] = p.position
+      })
       var results = document.createElement('div')
       results.className = 'pm-results'
+      function appendResultCard(provider) {
+        var card = self.buildCard(provider)
+        var pos = positionByProvider[provider.id]
+        if (pos) card.setAttribute('data-position', String(pos))
+        results.appendChild(card)
+      }
       var caseTypeName = ''
       var selectedCaseType = (self.data.caseTypes || []).find(function (ct) { return ct.id === self.state.selectedCaseTypeId })
       if (selectedCaseType) caseTypeName = selectedCaseType.name
@@ -964,7 +1014,7 @@
         }
         results.appendChild(helpLink)
         unique.forEach(function (item) {
-          results.appendChild(self.buildCard(item.provider))
+          appendResultCard(item.provider)
         })
       } else {
         var remaining = unique.slice()
@@ -998,7 +1048,7 @@
             results.appendChild(noMatch)
           } else {
             atLoc.forEach(function (item) {
-              results.appendChild(self.buildCard(item.provider))
+              appendResultCard(item.provider)
             })
           }
           if (outsideLoc.length) {
@@ -1007,12 +1057,12 @@
             sec3.textContent = 'Providers outside ' + locName
             results.appendChild(sec3)
             outsideLoc.forEach(function (item) {
-              results.appendChild(self.buildCard(item.provider))
+              appendResultCard(item.provider)
             })
           }
         } else {
           remaining.forEach(function (item) {
-            results.appendChild(self.buildCard(item.provider))
+            appendResultCard(item.provider)
           })
         }
       }
@@ -1029,6 +1079,7 @@
       restartBtn.onclick = function() { self.trackEvent('start_over_clicked'); self.resetState(); self.startFlow(); }
       results.appendChild(restartBtn)
       body.appendChild(results)
+      this.setupScrollDepthTracking(results, body, resultsShownAt)
     },
 
     renderGrouped: function (container, items) {
@@ -1043,6 +1094,60 @@
       })
       unique.forEach(function (provider) {
         container.appendChild(self.buildCard(provider))
+      })
+    },
+
+    setupScrollDepthTracking: function (resultsContainer, scrollRoot, resultsShownAt) {
+      var self = this
+      if (this._scrollObserver) {
+        this._scrollObserver.disconnect()
+        this._scrollObserver = null
+      }
+      if (this._scrollDebounceTimer) {
+        clearTimeout(this._scrollDebounceTimer)
+        this._scrollDebounceTimer = null
+      }
+      var cards = resultsContainer.querySelectorAll('[data-position]')
+      if (!cards.length) return
+
+      var lastPostedMax = 0
+
+      function maybePostScroll() {
+        if (self._scrollDebounceTimer) clearTimeout(self._scrollDebounceTimer)
+        self._scrollDebounceTimer = setTimeout(function () {
+          self._scrollDebounceTimer = null
+          var sd = self.state.scrollDepth
+          if (!sd || sd.max_position_seen <= lastPostedMax) return
+          lastPostedMax = sd.max_position_seen
+          self.trackScroll()
+        }, 300)
+      }
+
+      function updateScrollDepth(position) {
+        var existing = (self.state.scrollDepth && self.state.scrollDepth.max_position_seen) || 0
+        var max = Math.max(existing, position)
+        if (max > existing) {
+          self.state.scrollDepth = {
+            max_position_seen: max,
+            time_in_results_ms: Date.now() - resultsShownAt,
+          }
+          maybePostScroll()
+        }
+      }
+
+      this._scrollObserver = new IntersectionObserver(
+        function (entries) {
+          entries.forEach(function (entry) {
+            if (!entry.isIntersecting) return
+            var pos = parseInt(entry.target.getAttribute('data-position'), 10)
+            if (!isNaN(pos)) updateScrollDepth(pos)
+          })
+        },
+        { root: scrollRoot, threshold: 0.1 }
+      )
+
+      cards.forEach(function (card) {
+        self._scrollObserver.observe(card)
       })
     },
 
@@ -1423,16 +1528,37 @@
         providers_shown: Array.from(new Set(this.state.activeOfferings.map(function (o) { return o.provider_id }).filter(Boolean))),
         zero_results: zeroResults,
         providers_clicked: [],
+        results_positions: this.state.resultsPositions || [],
+        scroll_depth: this.state.scrollDepth || null,
       }, 'session(zero=' + zeroResults + ')')
     },
 
     trackClick: function (providerId) {
+      var position = null
+      for (var i = 0; i < this.state.resultsPositions.length; i++) {
+        if (this.state.resultsPositions[i].provider_id === providerId) {
+          position = this.state.resultsPositions[i].position
+          break
+        }
+      }
+      this.state.clickOrder++
       return this.postTracking({
         widget_id: this.widgetId,
         session_id: this.state.sessionId,
         provider_id: providerId,
         type: 'click',
+        position_at_click: position,
+        click_order: this.state.clickOrder,
       }, 'click')
+    },
+
+    trackScroll: function () {
+      return this.postTracking({
+        widget_id: this.widgetId,
+        session_id: this.state.sessionId,
+        type: 'scroll',
+        scroll_depth: this.state.scrollDepth,
+      }, 'scroll')
     },
   }
 

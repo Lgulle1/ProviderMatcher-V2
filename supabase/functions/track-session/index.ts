@@ -18,7 +18,7 @@ serve(async (req) => {
     if (body.type === 'click' && body.provider_id && body.widget_id && body.session_id) {
       const { data: row } = await supabase
         .from('widget_sessions')
-        .select('id, providers_clicked')
+        .select('id, providers_clicked, clicks_detail')
         .eq('widget_id', body.widget_id)
         .eq('session_id', body.session_id)
         .order('created_at', { ascending: false })
@@ -28,7 +28,42 @@ serve(async (req) => {
       if (row) {
         const prev = (row.providers_clicked ?? []) as string[]
         const next = prev.includes(body.provider_id) ? prev : [...prev, body.provider_id]
-        await supabase.from('widget_sessions').update({ providers_clicked: next }).eq('id', row.id)
+        const prevClicks = (row.clicks_detail ?? []) as unknown[]
+        const clicksDetail = [
+          ...prevClicks,
+          {
+            provider_id: body.provider_id,
+            position_at_click: body.position_at_click ?? null,
+            click_order: body.click_order ?? null,
+            clicked_at: new Date().toISOString(),
+          },
+        ]
+        await supabase
+          .from('widget_sessions')
+          .update({ providers_clicked: next, clicks_detail: clicksDetail })
+          .eq('id', row.id)
+      }
+
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { ...cors, 'Content-Type': 'application/json' },
+      })
+    }
+
+    if (body.type === 'scroll' && body.widget_id && body.session_id && body.scroll_depth) {
+      const { data: row } = await supabase
+        .from('widget_sessions')
+        .select('id')
+        .eq('widget_id', body.widget_id)
+        .eq('session_id', body.session_id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (row) {
+        await supabase
+          .from('widget_sessions')
+          .update({ scroll_depth: body.scroll_depth })
+          .eq('id', row.id)
       }
 
       return new Response(JSON.stringify({ ok: true }), {
@@ -87,6 +122,8 @@ serve(async (req) => {
       zero_results: body.zero_results === true,
       providers_clicked: body.providers_clicked || [],
       providers_shown: body.providers_shown || [],
+      results_positions: body.results_positions || [],
+      scroll_depth: body.scroll_depth ?? null,
     }
 
     if (existing) {
