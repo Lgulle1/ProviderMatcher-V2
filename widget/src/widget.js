@@ -161,8 +161,14 @@
     checkDomain: function () {
       var domains = (this.data && this.data.config && this.data.config.allowed_domains) || []
       if (!domains.length) return
-      var host = window.location.hostname
+      var host = window.location.hostname.toLowerCase()
       var allowed = domains.some(function (d) {
+        // Normalize entries so pasted URLs work: strip scheme, path, and port.
+        d = String(d || '').trim().toLowerCase()
+          .replace(/^[a-z][a-z0-9+.-]*:\/\//, '')
+          .split('/')[0]
+          .split(':')[0]
+        if (!d) return false
         return host === d || host.endsWith('.' + d)
       })
       if (!allowed) {
