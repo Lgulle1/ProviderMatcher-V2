@@ -148,7 +148,7 @@
       try {
         var response = await fetch(
           supabaseBaseUrl + '/functions/v1/widget-data?id=' + this.widgetId,
-          { method: 'GET', headers: { 'Content-Type': 'application/json' } }
+          { method: 'GET', headers: { 'Content-Type': 'application/json', 'apikey': supabaseAnonKey, 'Authorization': 'Bearer ' + supabaseAnonKey } }
         )
         if (!response.ok) throw new Error('HTTP ' + response.status)
         this.data = await response.json()
