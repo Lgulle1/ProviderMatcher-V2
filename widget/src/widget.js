@@ -148,7 +148,10 @@
       try {
         var response = await fetch(
           supabaseBaseUrl + '/functions/v1/widget-data?id=' + this.widgetId,
-          { method: 'GET', headers: { 'Content-Type': 'application/json', 'apikey': supabaseAnonKey, 'Authorization': 'Bearer ' + supabaseAnonKey } }
+          // NOTE: send only Authorization (no apikey). The widget-data function's
+          // CORS allowlist is "Content-Type, Authorization" — adding apikey makes
+          // the browser preflight fail with "Failed to fetch".
+          { method: 'GET', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + supabaseAnonKey } }
         )
         if (!response.ok) throw new Error('HTTP ' + response.status)
         this.data = await response.json()
