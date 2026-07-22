@@ -55,7 +55,7 @@ export async function updateWidget(id: string, updates: Partial<Widget>): Promis
 
 export async function publishWidget(
   id: string,
-  snapshot: Record<string, any>
+  snapshot: Record<string, unknown>
 ): Promise<{ error: string | null }> {
   const { error } = await supabase
     .from('widgets')

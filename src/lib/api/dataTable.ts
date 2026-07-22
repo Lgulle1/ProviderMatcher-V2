@@ -1,6 +1,19 @@
 import { supabase } from '../supabase'
+import type { Offering, Provider } from '../../types/database'
 
-export async function getDataTableOfferings(orgId: string): Promise<any[]> {
+/**
+ * An offering with the subset of provider columns the data table selects.
+ *
+ * The index signature is load-bearing, not laziness: the data table builds
+ * columns dynamically from the org's constraint keys and reads them by string,
+ * so rows genuinely are indexable beyond the declared fields.
+ */
+export interface DataTableOffering extends Offering {
+  providers: Pick<Provider, 'id' | 'name' | 'category_ids' | 'image_url'> | null
+  [key: string]: unknown
+}
+
+export async function getDataTableOfferings(orgId: string): Promise<DataTableOffering[]> {
   const { data, error } = await supabase
     .from('offerings')
     .select('*, providers(id, name, category_ids, image_url)')
@@ -29,7 +42,7 @@ export async function updateOfferingLocationIds(
 export async function updateOfferingConstraint(
   offeringId: string,
   key: string,
-  value: any
+  value: unknown
 ): Promise<{ error: string | null }> {
   const { data: offering, error: fetchError } = await supabase
     .from('offerings')
@@ -41,7 +54,7 @@ export async function updateOfferingConstraint(
     return { error: fetchError?.message ?? 'Failed to fetch offering constraints' }
   }
 
-  const currentConstraints = (offering.constraints ?? {}) as Record<string, any>
+  const currentConstraints = (offering.constraints ?? {}) as Record<string, unknown>
   const merged = { ...currentConstraints, [key]: value }
 
   const { error } = await supabase.from('offerings').update({ constraints: merged }).eq('id', offeringId)

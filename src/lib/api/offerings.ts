@@ -20,7 +20,7 @@ export async function createOffering(data: {
   case_type_id: string
   org_id: string
   location_ids?: string[]
-  constraints?: Record<string, any>
+  constraints?: Record<string, unknown>
 }): Promise<{ data: Offering | null; error: string | null }> {
   const { data: inserted, error } = await supabase
     .from('offerings')

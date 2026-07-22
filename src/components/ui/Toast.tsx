@@ -8,13 +8,9 @@ interface ToastItem {
 }
 
 let toasts: ToastItem[] = []
-let setToastsState: ((items: ToastItem[]) => void) | null = null
 const listeners = new Set<() => void>()
 
 function emit() {
-  if (setToastsState) {
-    setToastsState(toasts)
-  }
   listeners.forEach((listener) => listener())
 }
 
@@ -58,9 +54,6 @@ export function useToast() {
 
 export function ToastContainer() {
   const items = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
-  setToastsState = (nextItems: ToastItem[]) => {
-    toasts = nextItems
-  }
 
   return (
     <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex flex-col gap-2">
