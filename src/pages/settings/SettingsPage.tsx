@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { supabase } from '../../lib/supabase'
 import { useAuthStore } from '../../stores/authStore'
-import { useToast } from '../../components/ui/Toast'
+import { useToast } from '../../components/ui/toastStore'
 import type { Organization, User } from '../../types/database'
 
 type OrgFormValues = {

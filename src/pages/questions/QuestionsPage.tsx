@@ -33,7 +33,7 @@ import {
 import LogicTester from '../../components/testing/LogicTester'
 import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import LoadingSpinner from '../../components/ui/LoadingSpinner'
-import { useToast } from '../../components/ui/Toast'
+import { useToast } from '../../components/ui/toastStore'
 import { getConstraints } from '../../lib/api/constraints'
 import { getLocations } from '../../lib/api/locations'
 import {

@@ -4,7 +4,7 @@ import { Archive, Pencil, Plus, SlidersHorizontal } from 'lucide-react'
 import ConstraintModal, { type ConstraintFormSavePayload } from '../../components/modals/ConstraintModal'
 import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import EmptyState from '../../components/ui/EmptyState'
-import { useToast } from '../../components/ui/Toast'
+import { useToast } from '../../components/ui/toastStore'
 import {
   archiveConstraint,
   createConstraint,

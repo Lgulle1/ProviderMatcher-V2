@@ -15,7 +15,7 @@ import * as XLSX from 'xlsx'
 import ImportWizard from '../../components/import/ImportWizard'
 import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import LoadingSpinner from '../../components/ui/LoadingSpinner'
-import { useToast } from '../../components/ui/Toast'
+import { useToast } from '../../components/ui/toastStore'
 import {
   archiveAllOfferings,
   archiveOfferings,

@@ -20,7 +20,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { Archive, GripVertical, Pencil, Plus, Tag } from 'lucide-react'
 import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import EmptyState from '../../components/ui/EmptyState'
-import { useToast } from '../../components/ui/Toast'
+import { useToast } from '../../components/ui/toastStore'
 import {
   archiveCategory,
   createCategory,

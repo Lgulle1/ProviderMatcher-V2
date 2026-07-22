@@ -8,7 +8,7 @@ import { getProviders } from '../../lib/api/providers'
 import { detectConflicts, executeImportRun, type ConflictItem } from '../../lib/import/importExecution'
 import { supabase } from '../../lib/supabase'
 import LoadingSpinner from '../ui/LoadingSpinner'
-import { useToast } from '../ui/Toast'
+import { useToast } from '../ui/toastStore'
 import { parseFile, type ParseResult } from '../../lib/parsers/fileParser'
 import type { CaseType, Category, Constraint, Location, Provider } from '../../types/database'
 

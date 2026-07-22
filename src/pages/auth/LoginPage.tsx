@@ -4,6 +4,9 @@ import { useForm } from 'react-hook-form'
 import { useNavigate } from 'react-router-dom'
 import { z } from 'zod'
 import { signIn, signUp } from '../../hooks/useAuth'
+import { isSignupEnabled } from '../../lib/featureFlags'
+
+const signupEnabled = isSignupEnabled()
 
 const signInSchema = z.object({
   email: z.string().min(1, 'Email is required').email('Enter a valid email'),
@@ -64,11 +67,14 @@ export default function LoginPage() {
   })
 
   function toggleMode() {
+    if (!signupEnabled) return
     setIsSignUp((v) => !v)
     setErrorMessage('')
     signInForm.reset()
     signUpForm.reset()
   }
+
+  const showSignUp = signupEnabled && isSignUp
 
   async function onSignInSubmit(data: SignInValues) {
     setErrorMessage('')
@@ -86,6 +92,7 @@ export default function LoginPage() {
   }
 
   async function onSignUpSubmit(data: SignUpValues) {
+    if (!signupEnabled) return
     setErrorMessage('')
     setIsLoading(true)
     try {
@@ -110,13 +117,19 @@ export default function LoginPage() {
 
         <hr className="mt-6 mb-6 border-slate-200" />
 
+        {!signupEnabled ? (
+          <p className="mb-4 text-center text-sm text-slate-600">
+            Accounts are currently invite-only. Contact your administrator for access.
+          </p>
+        ) : null}
+
         {errorMessage ? (
           <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
             {errorMessage}
           </div>
         ) : null}
 
-        {!isSignUp ? (
+        {!showSignUp ? (
           <form
             onSubmit={signInForm.handleSubmit(onSignInSubmit)}
             className="space-y-4"
@@ -253,29 +266,31 @@ export default function LoginPage() {
           </form>
         )}
 
-        {!isSignUp ? (
-          <p className="mt-4 text-center text-sm text-slate-600">
-            Don&apos;t have an account?{' '}
-            <button
-              type="button"
-              onClick={toggleMode}
-              className="font-medium text-indigo-600 hover:text-indigo-500"
-            >
-              Sign up
-            </button>
-          </p>
-        ) : (
-          <p className="mt-4 text-center text-sm text-slate-600">
-            Already have an account?{' '}
-            <button
-              type="button"
-              onClick={toggleMode}
-              className="font-medium text-indigo-600 hover:text-indigo-500"
-            >
-              Sign in
-            </button>
-          </p>
-        )}
+        {signupEnabled ? (
+          !showSignUp ? (
+            <p className="mt-4 text-center text-sm text-slate-600">
+              Don&apos;t have an account?{' '}
+              <button
+                type="button"
+                onClick={toggleMode}
+                className="font-medium text-indigo-600 hover:text-indigo-500"
+              >
+                Sign up
+              </button>
+            </p>
+          ) : (
+            <p className="mt-4 text-center text-sm text-slate-600">
+              Already have an account?{' '}
+              <button
+                type="button"
+                onClick={toggleMode}
+                className="font-medium text-indigo-600 hover:text-indigo-500"
+              >
+                Sign in
+              </button>
+            </p>
+          )
+        ) : null}
       </div>
     </div>
   )

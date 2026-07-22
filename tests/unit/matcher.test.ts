@@ -6,6 +6,7 @@ import {
   filterRange,
   getUniqueConstraintValues,
   hasConstraintDataForSkip,
+  resolveAutoSkip,
   replaySession,
 } from '../../src/lib/matcher'
 
@@ -168,6 +169,64 @@ describe('getUniqueConstraintValues', () => {
       offering({ constraints: { insurance: '' } }),
     ]
     expect(getUniqueConstraintValues(offerings, 'insurance')).toEqual(['Aetna', 'Cigna'])
+  })
+})
+
+describe('resolveAutoSkip', () => {
+  const withData = constraint({ id: 'c-has', mapped_key: 'has_key' })
+  const withoutData = constraint({ id: 'c-none', mapped_key: 'never_mapped' })
+  const map = new Map([
+    ['c-has', withData],
+    ['c-none', withoutData],
+  ])
+  const offerings = [offering({ constraints: { has_key: 1 } })]
+
+  it('stays put when the current question has data', () => {
+    const questions = [question({ id: 'q1', constraint_id: 'c-has', order_rank: 0 })]
+    expect(resolveAutoSkip(questions, 0, map, offerings)).toEqual({ nextIndex: 0, skipped: [] })
+  })
+
+  it('skips consecutive clinical questions with no backing data', () => {
+    const questions = [
+      question({ id: 'q1', constraint_id: 'c-none' }),
+      question({ id: 'q2', constraint_id: 'c-none' }),
+      question({ id: 'q3', constraint_id: 'c-has' }),
+    ]
+    const result = resolveAutoSkip(questions, 0, map, offerings)
+    expect(result.nextIndex).toBe(2)
+    expect(result.skipped.map((q) => q.id)).toEqual(['q1', 'q2'])
+  })
+
+  it('stops at a non-clinical question rather than skipping past it', () => {
+    const questions = [
+      question({ id: 'q1', constraint_id: 'c-none' }),
+      question({ id: 'q-loc', question_type: 'location' }),
+      question({ id: 'q3', constraint_id: 'c-none' }),
+    ]
+    const result = resolveAutoSkip(questions, 0, map, offerings)
+    expect(result.nextIndex).toBe(1)
+    expect(result.skipped.map((q) => q.id)).toEqual(['q1'])
+  })
+
+  it('stops on an unknown constraint instead of silently skipping', () => {
+    const questions = [question({ id: 'q1', constraint_id: 'c-missing' })]
+    expect(resolveAutoSkip(questions, 0, map, offerings)).toEqual({ nextIndex: 0, skipped: [] })
+  })
+
+  it('can run off the end when every remaining question is skippable', () => {
+    const questions = [
+      question({ id: 'q1', constraint_id: 'c-none' }),
+      question({ id: 'q2', constraint_id: 'c-none' }),
+    ]
+    expect(resolveAutoSkip(questions, 0, map, offerings).nextIndex).toBe(2)
+  })
+
+  it('respects the starting index', () => {
+    const questions = [
+      question({ id: 'q1', constraint_id: 'c-none' }),
+      question({ id: 'q2', constraint_id: 'c-has' }),
+    ]
+    expect(resolveAutoSkip(questions, 1, map, offerings)).toEqual({ nextIndex: 1, skipped: [] })
   })
 })
 

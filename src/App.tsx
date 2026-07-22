@@ -19,6 +19,7 @@ import QuestionsPage from './pages/questions/QuestionsPage'
 import WidgetsPage from './pages/widgets/WidgetsPage'
 import WidgetBuilderPage from './pages/widgets/WidgetBuilderPage'
 import SettingsPage from './pages/settings/SettingsPage'
+import NotFoundPage from './pages/NotFoundPage'
 
 export default function App() {
   return (
@@ -158,6 +159,7 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
         <ToastContainer />
       </BrowserRouter>

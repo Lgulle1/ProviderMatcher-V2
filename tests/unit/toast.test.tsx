@@ -1,6 +1,7 @@
 import { act, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ToastContainer, useToast } from '../../src/components/ui/Toast'
+import { ToastContainer } from '../../src/components/ui/Toast'
+import { useToast } from '../../src/components/ui/toastStore'
 
 /**
  * Covers the toast store after removing `setToastsState`, a module global that

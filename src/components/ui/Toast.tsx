@@ -1,56 +1,6 @@
 import { AlertTriangle, CheckCircle2, X, XCircle } from 'lucide-react'
 import { useSyncExternalStore } from 'react'
-
-interface ToastItem {
-  id: string
-  message: string
-  type: 'success' | 'error' | 'warning'
-}
-
-let toasts: ToastItem[] = []
-const listeners = new Set<() => void>()
-
-function emit() {
-  listeners.forEach((listener) => listener())
-}
-
-function addToast(type: ToastItem['type'], message: string) {
-  const id =
-    typeof crypto !== 'undefined' && 'randomUUID' in crypto
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random()}`
-  const item: ToastItem = { id, message, type }
-  toasts = [...toasts, item]
-  emit()
-
-  window.setTimeout(() => {
-    removeToast(id)
-  }, 3000)
-}
-
-function removeToast(id: string) {
-  toasts = toasts.filter((toast) => toast.id !== id)
-  emit()
-}
-
-function subscribe(listener: () => void) {
-  listeners.add(listener)
-  return () => listeners.delete(listener)
-}
-
-function getSnapshot() {
-  return toasts
-}
-
-export function useToast() {
-  return {
-    toast: {
-      success: (message: string) => addToast('success', message),
-      error: (message: string) => addToast('error', message),
-      warning: (message: string) => addToast('warning', message),
-    },
-  }
-}
+import { getSnapshot, removeToast, subscribe } from './toastStore'
 
 export function ToastContainer() {
   const items = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)

@@ -65,6 +65,38 @@ export function getUniqueConstraintValues<T extends Offering>(offerings: T[], ma
   return [...set].sort((a, b) => a.localeCompare(b))
 }
 
+/**
+ * Advance past clinical questions that no offering in the active set carries
+ * data for — asking them could only ever narrow the set to nothing.
+ *
+ * Returns the index to land on plus the questions passed over, so the caller
+ * can report them without re-deriving the walk. Pure, so the same rule can be
+ * asserted in tests rather than only observed through the UI.
+ */
+export function resolveAutoSkip<T extends Offering>(
+  questions: Question[],
+  startIndex: number,
+  constraintsById: Map<string, Constraint>,
+  offerings: T[],
+): { nextIndex: number; skipped: Question[] } {
+  const skipped: Question[] = []
+  let idx = startIndex
+
+  while (idx < questions.length) {
+    const q = questions[idx]
+    if (q.question_type !== 'clinical' || !q.constraint_id) break
+
+    const c = constraintsById.get(q.constraint_id)
+    if (!c) break
+    if (hasConstraintDataForSkip(offerings, c)) break
+
+    skipped.push(q)
+    idx += 1
+  }
+
+  return { nextIndex: idx, skipped }
+}
+
 export interface ReplayInput {
   caseTypeId: string | null
   questions: Question[]

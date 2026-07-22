@@ -36,9 +36,8 @@ const api = vi.hoisted(() => ({
 
 vi.mock('../../src/lib/api/caseTypes', () => api)
 
-vi.mock('../../src/components/ui/Toast', () => ({
-  useToast: () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }),
-  ToastContainer: () => null,
+vi.mock('../../src/components/ui/toastStore', () => ({
+  useToast: () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }),
 }))
 
 import CaseTypesPage from '../../src/pages/case-types/CaseTypesPage'

@@ -14,7 +14,7 @@ import {
   filterExact,
   filterRange,
   getUniqueConstraintValues,
-  hasConstraintDataForSkip,
+  resolveAutoSkip,
 } from '../../lib/matcher'
 import type { CaseType, Constraint, Location, Offering, Provider } from '../../types/database'
 
@@ -189,13 +189,13 @@ export default function LogicTester({ isOpen, onClose, orgId }: LogicTesterProps
     const m = new Map<string, Constraint>()
     bundle?.constraints.forEach((c) => m.set(c.id, c))
     return m
-  }, [bundle?.constraints])
+  }, [bundle])
 
   const categoryMap = useMemo(() => {
     const m = new Map<string, string>()
     bundle?.categories.forEach((c) => m.set(c.id, c.name))
     return m
-  }, [bundle?.categories])
+  }, [bundle])
 
   const questionSequence = useMemo(() => {
     if (!bundle?.questions.length) {
@@ -207,7 +207,7 @@ export default function LogicTester({ isOpen, onClose, orgId }: LogicTesterProps
       .filter((q) => q.question_type !== 'entry')
       .sort((a, b) => a.order_rank - b.order_rank)
     return entry ? [entry, ...nonEntry] : nonEntry
-  }, [bundle?.questions])
+  }, [bundle])
 
   const startSession = useCallback(() => {
     if (!bundle?.offerings) {
@@ -277,24 +277,17 @@ export default function LogicTester({ isOpen, onClose, orgId }: LogicTesterProps
     if (!isOpen || phase !== 'questions' || !bundle || questionSequence.length === 0) {
       return
     }
-    let idx = currentQuestionIndex
-    while (idx < questionSequence.length) {
-      const q = questionSequence[idx]
-      if (q.question_type !== 'clinical' || !q.constraint_id) {
-        break
-      }
-      const c = constraintMap.get(q.constraint_id)
-      if (!c) {
-        break
-      }
-      if (hasConstraintDataForSkip(activeOfferings, c)) {
-        break
-      }
+    const { nextIndex, skipped } = resolveAutoSkip(
+      questionSequence,
+      currentQuestionIndex,
+      constraintMap,
+      activeOfferings,
+    )
+    for (const q of skipped) {
       addLog('skip', `Auto-skipped clinical (no constraint data on offerings): ${q.question_text}`)
-      idx += 1
     }
-    if (idx !== currentQuestionIndex) {
-      setCurrentQuestionIndex(idx)
+    if (nextIndex !== currentQuestionIndex) {
+      setCurrentQuestionIndex(nextIndex)
     }
   }, [
     isOpen,
