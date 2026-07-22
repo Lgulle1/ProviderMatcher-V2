@@ -33,8 +33,8 @@ jobs:
           npm install
           NODE_ENV=production node build.js
 
-      # Not blocking yet: there is a known backlog of react-hooks findings.
-      # Remove continue-on-error once that is cleared so lint gates merges too.
+      # Blocking: the error count is zero, so any new one is a regression.
+      # Warnings (react-hooks/exhaustive-deps in Analytics and DataTable) are
+      # still reported but do not fail the build.
       - name: Lint
         run: npm run lint
-        continue-on-error: true

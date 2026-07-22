@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { RotateCcw, X } from 'lucide-react'
 import { getCaseTypes } from '../../lib/api/caseTypes'
@@ -67,15 +67,14 @@ function initials(name: string): string {
 }
 
 interface LogicTesterProps {
-  isOpen: boolean
   onClose: () => void
   orgId: string
 }
 
-export default function LogicTester({ isOpen, onClose, orgId }: LogicTesterProps) {
+export default function LogicTester({ onClose, orgId }: LogicTesterProps) {
   const org = useAuthStore((s) => s.org)
 
-  const queryEnabled = Boolean(isOpen && orgId)
+  const queryEnabled = Boolean(orgId)
 
   const { data: questionsData, isPending: questionsPending } = useQuery({
     queryKey: ['questions', orgId],
@@ -152,7 +151,9 @@ export default function LogicTester({ isOpen, onClose, orgId }: LogicTesterProps
       locationsPending ||
       constraintsPending)
 
-  const snapshotRef = useRef<OfferingRow[]>([])
+  // Baseline for Reset. State rather than a ref because the session that seeds
+  // it can start during render.
+  const [snapshot, setSnapshot] = useState<OfferingRow[]>([])
 
   const [phase, setPhase] = useState<Phase>('questions')
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
@@ -209,14 +210,64 @@ export default function LogicTester({ isOpen, onClose, orgId }: LogicTesterProps
     return entry ? [entry, ...nonEntry] : nonEntry
   }, [bundle])
 
+  /**
+   * Where the flow lands starting from `from`, and the log lines that implies.
+   *
+   * Auto-skipping and the questions -> results transition used to be reactive
+   * effects that watched the index and corrected it afterwards. Deciding both
+   * here, at the point the flow actually moves, keeps them out of render and
+   * keeps each log line tied to the transition that caused it.
+   */
+  const planAdvance = useCallback(
+    (from: number, offerings: OfferingRow[]) => {
+      const { nextIndex, skipped } = resolveAutoSkip(
+        questionSequence,
+        from,
+        constraintMap,
+        offerings,
+      )
+      const entries: LogEntry[] = skipped.map((q) => ({
+        timestamp: ts(),
+        type: 'skip',
+        message: `Auto-skipped clinical (no constraint data on offerings): ${q.question_text}`,
+      }))
+
+      const finished = nextIndex >= questionSequence.length && questionSequence.length > 0
+      if (finished) {
+        entries.push({
+          timestamp: ts(),
+          type: 'success',
+          message: 'Question flow complete — showing results',
+        })
+      }
+
+      return { index: nextIndex, finished, entries }
+    },
+    [questionSequence, constraintMap],
+  )
+
+  /** Move the flow to `from`, applying auto-skip and end-of-flow. */
+  const advanceTo = useCallback(
+    (from: number, offerings: OfferingRow[]) => {
+      const plan = planAdvance(from, offerings)
+      setCurrentQuestionIndex(plan.index)
+      if (plan.finished) {
+        setPhase('results')
+      }
+      if (plan.entries.length > 0) {
+        setLogs((prev) => [...prev, ...plan.entries])
+      }
+    },
+    [planAdvance],
+  )
+
   const startSession = useCallback(() => {
     if (!bundle?.offerings) {
       return
     }
     const copy = JSON.parse(JSON.stringify(bundle.offerings)) as OfferingRow[]
-    snapshotRef.current = JSON.parse(JSON.stringify(bundle.offerings)) as OfferingRow[]
+    setSnapshot(JSON.parse(JSON.stringify(bundle.offerings)) as OfferingRow[])
     setActiveOfferings(copy)
-    setCurrentQuestionIndex(0)
     setAnswers({})
     setSelectedCaseTypeId(null)
     setSelectedLocationId(null)
@@ -228,21 +279,31 @@ export default function LogicTester({ isOpen, onClose, orgId }: LogicTesterProps
     setRangeInput('')
     setExactInput('')
     setResultsSearch('')
-    setLogs([{ timestamp: ts(), message: `Session started — ${copy.length} total offerings loaded`, type: 'info' }])
-  }, [bundle?.offerings])
 
-  const sessionInitRef = useRef(false)
-  useEffect(() => {
-    if (!isOpen) {
-      sessionInitRef.current = false
-      return
+    // Built as one absolute assignment rather than appends, so starting a
+    // session is idempotent — it can safely run during render.
+    const plan = planAdvance(0, copy)
+    setCurrentQuestionIndex(plan.index)
+    if (plan.finished) {
+      setPhase('results')
     }
-    if (!bundle?.offerings || sessionInitRef.current) {
-      return
-    }
-    sessionInitRef.current = true
+    setLogs([
+      {
+        timestamp: ts(),
+        message: `Session started — ${copy.length} total offerings loaded`,
+        type: 'info',
+      },
+      ...plan.entries,
+    ])
+  }, [bundle?.offerings, planAdvance])
+
+  // Start a session as soon as the data lands. The component is mounted only
+  // while the tester is open, so this runs once per open.
+  const [startedFor, setStartedFor] = useState<OfferingRow[] | null>(null)
+  if (bundle?.offerings && bundle.offerings !== startedFor) {
+    setStartedFor(bundle.offerings)
     startSession()
-  }, [isOpen, bundle?.offerings, startSession])
+  }
 
   const pushHistory = useCallback(() => {
     setHistory((h) => [
@@ -273,43 +334,6 @@ export default function LogicTester({ isOpen, onClose, orgId }: LogicTesterProps
 
   const currentQuestion = questionSequence[currentQuestionIndex]
 
-  useEffect(() => {
-    if (!isOpen || phase !== 'questions' || !bundle || questionSequence.length === 0) {
-      return
-    }
-    const { nextIndex, skipped } = resolveAutoSkip(
-      questionSequence,
-      currentQuestionIndex,
-      constraintMap,
-      activeOfferings,
-    )
-    for (const q of skipped) {
-      addLog('skip', `Auto-skipped clinical (no constraint data on offerings): ${q.question_text}`)
-    }
-    if (nextIndex !== currentQuestionIndex) {
-      setCurrentQuestionIndex(nextIndex)
-    }
-  }, [
-    isOpen,
-    phase,
-    currentQuestionIndex,
-    questionSequence,
-    activeOfferings,
-    constraintMap,
-    bundle,
-    addLog,
-  ])
-
-  useEffect(() => {
-    if (!isOpen || phase !== 'questions') {
-      return
-    }
-    if (currentQuestionIndex >= questionSequence.length && questionSequence.length > 0) {
-      setPhase('results')
-      addLog('success', 'Question flow complete — showing results')
-    }
-  }, [isOpen, phase, currentQuestionIndex, questionSequence.length, addLog])
-
   const handleBack = () => {
     if (history.length === 0) {
       return
@@ -329,14 +353,14 @@ export default function LogicTester({ isOpen, onClose, orgId }: LogicTesterProps
   }
 
   const handleReset = () => {
-    const base = snapshotRef.current.length
-      ? snapshotRef.current
+    const base = snapshot.length
+      ? snapshot
       : bundle?.offerings
         ? (JSON.parse(JSON.stringify(bundle.offerings)) as OfferingRow[])
         : []
-    snapshotRef.current = JSON.parse(JSON.stringify(base)) as OfferingRow[]
-    setActiveOfferings(JSON.parse(JSON.stringify(base)) as OfferingRow[])
-    setCurrentQuestionIndex(0)
+    const fresh = JSON.parse(JSON.stringify(base)) as OfferingRow[]
+    setSnapshot(JSON.parse(JSON.stringify(base)) as OfferingRow[])
+    setActiveOfferings(fresh)
     setAnswers({})
     setSelectedCaseTypeId(null)
     setSelectedLocationId(null)
@@ -348,7 +372,20 @@ export default function LogicTester({ isOpen, onClose, orgId }: LogicTesterProps
     setRangeInput('')
     setExactInput('')
     setResultsSearch('')
-    setLogs([{ timestamp: ts(), message: `Session started — ${base.length} total offerings loaded`, type: 'info' }])
+
+    const plan = planAdvance(0, fresh)
+    setCurrentQuestionIndex(plan.index)
+    if (plan.finished) {
+      setPhase('results')
+    }
+    setLogs([
+      {
+        timestamp: ts(),
+        message: `Session started — ${base.length} total offerings loaded`,
+        type: 'info',
+      },
+      ...plan.entries,
+    ])
   }
 
   const advanceAfterFilter = (
@@ -366,7 +403,7 @@ export default function LogicTester({ isOpen, onClose, orgId }: LogicTesterProps
       setPhase('zero_results')
       return
     }
-    setCurrentQuestionIndex((i) => i + 1)
+    advanceTo(currentQuestionIndex + 1, nextOfferings)
   }
 
   const answerEntry = (caseTypeId: string) => {
@@ -377,7 +414,7 @@ export default function LogicTester({ isOpen, onClose, orgId }: LogicTesterProps
     setSelectedCaseTypeId(caseTypeId)
     setActiveOfferings(next)
     addLog('info', `Case type selected — ${next.length} offerings (was ${prev})`)
-    setCurrentQuestionIndex((i) => i + 1)
+    advanceTo(currentQuestionIndex + 1, next)
   }
 
   const answerLocation = (locId: string) => {
@@ -385,7 +422,7 @@ export default function LogicTester({ isOpen, onClose, orgId }: LogicTesterProps
     setSelectedLocationId(locId)
     setAnswers((a) => ({ ...a, location: locId }))
     addLog('info', `Location preference recorded: ${locId}`)
-    setCurrentQuestionIndex((i) => i + 1)
+    advanceTo(currentQuestionIndex + 1, activeOfferings)
   }
 
   const answerProvider = (yes: boolean) => {
@@ -402,7 +439,7 @@ export default function LogicTester({ isOpen, onClose, orgId }: LogicTesterProps
     pushHistory()
     setAnswers((a) => ({ ...a, provider_bypass: false }))
     addLog('info', 'Continuing question flow')
-    setCurrentQuestionIndex((i) => i + 1)
+    advanceTo(currentQuestionIndex + 1, activeOfferings)
   }
 
   const answerClinicalBinary = (pickedYes: boolean) => {
@@ -472,10 +509,13 @@ export default function LogicTester({ isOpen, onClose, orgId }: LogicTesterProps
     if (offeringsBeforeBypass === null || bypassResumeIndex === null) {
       return
     }
-    setActiveOfferings(JSON.parse(JSON.stringify(offeringsBeforeBypass)) as OfferingRow[])
+    const restored = JSON.parse(JSON.stringify(offeringsBeforeBypass)) as OfferingRow[]
+    setActiveOfferings(restored)
     setBypassMode(false)
     setPhase('questions')
-    setCurrentQuestionIndex(bypassResumeIndex)
+    // Resume applies auto-skip too, matching what the old reactive effect did
+    // once the index landed.
+    advanceTo(bypassResumeIndex, restored)
     setOfferingsBeforeBypass(null)
     setBypassResumeIndex(null)
     addLog('info', 'Resumed question flow after bypass')
@@ -499,10 +539,6 @@ export default function LogicTester({ isOpen, onClose, orgId }: LogicTesterProps
       return name.toLowerCase().includes(q)
     })
   }, [resultsDeduped, resultsSearch, providerById])
-
-  if (!isOpen) {
-    return null
-  }
 
   const logColor = (t: LogType) => {
     switch (t) {

@@ -1482,7 +1482,11 @@ export default function QuestionsPage() {
         onCancel={() => setModal({ type: null })}
       />
 
-      <LogicTester isOpen={logicTesterOpen} onClose={() => setLogicTesterOpen(false)} orgId={orgId} />
+      {/* Mounted only while open, so each session starts from clean state
+          rather than the component resetting itself from an effect. */}
+      {logicTesterOpen ? (
+        <LogicTester onClose={() => setLogicTesterOpen(false)} orgId={orgId} />
+      ) : null}
     </div>
   )
 }
