@@ -109,7 +109,7 @@ export interface Offering {
   case_type_id: string
   org_id: string
   location_ids: string[]
-  constraints: Record<string, any>
+  constraints: Record<string, unknown>
   is_archived: boolean
   created_at: string
   updated_at: string
@@ -125,7 +125,7 @@ export interface Question {
   constraint_id: string | null
   required: boolean
   order_rank: number
-  system_config: Record<string, any>
+  system_config: Record<string, unknown>
   is_archived: boolean
   created_at: string
   updated_at: string
@@ -147,9 +147,9 @@ export interface Widget {
   scoped_case_type_ids: string[]
   scoped_location_ids: string[]
   scoped_question_ids: string[]
-  question_order: any[]
+  question_order: string[]
   published_at: string | null
-  published_snapshot: Record<string, any> | null
+  published_snapshot: Record<string, unknown> | null
   created_at: string
   updated_at: string
 }
@@ -163,7 +163,7 @@ export interface ImportHistory {
   providers_updated: number
   duplicates_detected: number
   errors: number
-  mapping_template: Record<string, any> | null
+  mapping_template: Record<string, unknown> | null
   created_at: string
 }
 
@@ -173,7 +173,7 @@ export interface WidgetSession {
   org_id: string | null
   session_id: string
   case_type_id: string | null
-  answers: Record<string, any>
+  answers: Record<string, unknown>
   results_count: number | null
   zero_results: boolean
   providers_clicked: string[]

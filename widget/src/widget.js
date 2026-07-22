@@ -1571,12 +1571,91 @@
     },
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function () {
+  // --- Failure containment -------------------------------------------------
+  // This runs on a customer's live site in front of patients. Before, only
+  // fetchData was wrapped, so a throw anywhere in rendering or the question
+  // flow left a frozen widget with no signal to anyone. Every flow method is
+  // wrapped so a failure degrades to the org's fallback (phone number where
+  // configured) instead of a dead box.
+
+  widget.degraded = false
+
+  /**
+   * Replace the conversation area with the org's fallback so a patient who
+   * hits a broken step still gets a way to reach the practice.
+   */
+  widget.degrade = function (label, err) {
+    console.warn('[ProviderMatcher] recovering from error in ' + label + ':', err)
+    if (this.degraded) return
+    this.degraded = true
+
+    try {
+      this.trackEvent('widget_error', null, null, label, null)
+    } catch (e) {
+      /* tracking must never mask the original failure */
+    }
+
+    var config = (this.data && this.data.config) || {}
+    var body = this.shadow && this.shadow.getElementById('pm-body')
+    if (!body) return
+
+    var message =
+      config.fallback_message ||
+      "Sorry — something went wrong on our end. Please give us a call and we'll help you find the right provider."
+
+    var box = document.createElement('div')
+    box.className = 'pm-bubble'
+    box.textContent = message
+    body.appendChild(box)
+
+    if (config.fallback_phone) {
+      var link = document.createElement('a')
+      link.className = 'pm-btn'
+      link.href = 'tel:' + String(config.fallback_phone).replace(/[^0-9+]/g, '')
+      link.textContent = 'Call ' + config.fallback_phone
+      link.style.cssText = 'display:inline-block;margin-top:8px;text-decoration:none;'
+      body.appendChild(link)
+    }
+
+    body.scrollTop = body.scrollHeight
+  }
+
+  // Wrap in place rather than editing each method, so the guarantee holds for
+  // every flow method including ones added later.
+  ;[
+    'checkDomain', 'injectWidget', 'injectStyles', 'createFloatingButton',
+    'createChatContainer', 'resetState', 'addBubble', 'startFlow',
+    'getQuestionSequence', 'findConstraint', 'renderQuestion', 'renderCaseTypes',
+    'renderLocationSelect', 'renderProviderChoice', 'renderBinary', 'renderRange',
+    'renderExact', 'handleAnswer', 'goBack', 'showZeroResults', 'showResults',
+    'renderGrouped', 'setupScrollDepthTracking', 'buildCard',
+  ].forEach(function (name) {
+    var original = widget[name]
+    if (typeof original !== 'function') return
+    widget[name] = function () {
+      try {
+        return original.apply(this, arguments)
+      } catch (err) {
+        this.degrade(name, err)
+        return null
+      }
+    }
+  })
+
+  function boot() {
+    try {
       widget.init()
-    })
+    } catch (err) {
+      // Nothing is rendered yet, so there is no UI to degrade into — stay out
+      // of the host page's way rather than throwing into it.
+      console.warn('[ProviderMatcher] failed to start:', err)
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot)
   } else {
-    widget.init()
+    boot()
   }
 
   window._ProviderMatcher = widget

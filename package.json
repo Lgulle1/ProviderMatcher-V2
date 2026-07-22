@@ -7,7 +7,13 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run --config vitest.unit.config.ts",
+    "test:watch": "vitest --config vitest.unit.config.ts",
+    "test:tenant": "vitest run tests/tenant-isolation",
+    "test:tenant:watch": "vitest tests/tenant-isolation",
+    "test:tenant:lint": "eslint tests/tenant-isolation vitest.config.ts",
+    "test:tenant:typecheck": "tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -47,6 +53,7 @@
     "tsx": "^4.22.4",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.57.0",
-    "vite": "^8.0.1"
+    "vite": "^8.0.1",
+    "vitest": "^4.1.9"
   }
 }

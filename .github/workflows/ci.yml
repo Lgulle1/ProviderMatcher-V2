@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npx tsc -b --force
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Build widget
+        working-directory: widget
+        run: |
+          npm install
+          NODE_ENV=production node build.js
+
+      # Not blocking yet: there is a known backlog of react-hooks findings.
+      # Remove continue-on-error once that is cleared so lint gates merges too.
+      - name: Lint
+        run: npm run lint
+        continue-on-error: true

@@ -1,17 +1,28 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { corsHeaders, isHostAllowed, requestHost } from '../_shared/origin.ts'
+import { clientKey, isUuid, rateLimit } from '../_shared/guard.ts'
 
-const cors = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-}
+// Keep in sync with the widget's fetch: it sends only Content-Type and
+// Authorization, and adding to this list has previously broken preflight.
+const ALLOW_HEADERS = 'Content-Type, Authorization'
 
 serve(async (req) => {
+  // Preflight leaks nothing, so answer it permissively; the domain list is
+  // enforced on the actual GET, once we know which org the widget belongs to.
+  const cors = corsHeaders(req, ALLOW_HEADERS, false)
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
   try {
+    if (!rateLimit(`widget-data:${clientKey(req)}`, 120, 60_000)) {
+      return new Response(JSON.stringify({ error: 'Too many requests' }), {
+        status: 429,
+        headers: { ...cors, 'Content-Type': 'application/json', 'Retry-After': '60' },
+      })
+    }
+
     const url = new URL(req.url)
     const widgetId = url.searchParams.get('id')
-    if (!widgetId) {
+    if (!isUuid(widgetId)) {
       return new Response(JSON.stringify({ error: 'Missing widget id' }), {
         status: 400,
         headers: { ...cors, 'Content-Type': 'application/json' },
@@ -20,7 +31,7 @@ serve(async (req) => {
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SERVICE_ROLE_KEY')!,
+      (Deno.env.get('SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'))!,
     )
 
     const { data: widget, error: widgetError } = await supabase
@@ -101,6 +112,18 @@ serve(async (req) => {
       widgetSessionsQuery,
     ])
 
+    // Enforce the org's domain list here, not just in the widget. The
+    // client-side check in widget.js runs after the payload has already been
+    // delivered, so on its own it hides the UI without protecting the data.
+    const host = requestHost(req)
+    const locked = Array.isArray(org?.allowed_domains) && org.allowed_domains.length > 0
+    if (!isHostAllowed(host, org?.allowed_domains)) {
+      return new Response(JSON.stringify({ error: 'Domain not authorized' }), {
+        status: 403,
+        headers: { ...corsHeaders(req, ALLOW_HEADERS, true), 'Content-Type': 'application/json' },
+      })
+    }
+
     const providerBookingCounts: Record<string, number> = {}
     for (const row of widgetSessions ?? []) {
       const clicked = (row.providers_clicked ?? []) as string[]
@@ -174,15 +197,17 @@ serve(async (req) => {
       }),
       {
         headers: {
-          ...cors,
+          ...corsHeaders(req, ALLOW_HEADERS, locked),
           'Content-Type': 'application/json',
           'Cache-Control': 'public, max-age=60',
         },
       },
     )
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e)
-    return new Response(JSON.stringify({ error: message }), {
+    // Log the detail, return a generic message: this endpoint is public and
+    // internal errors can name tables and columns.
+    console.error('widget-data failed', e)
+    return new Response(JSON.stringify({ error: 'Internal error' }), {
       status: 500,
       headers: { ...cors, 'Content-Type': 'application/json' },
     })
