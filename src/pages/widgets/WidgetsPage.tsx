@@ -55,11 +55,12 @@ export default function WidgetsPage() {
     }
   }, [modal.type])
 
-  useEffect(() => {
-    if (modal.type !== 'embed') {
-      setEmbedCopied(false)
-    }
-  }, [modal.type])
+  // Reset the "Copied!" label as the embed dialog opens rather than in an
+  // effect watching every modal transition.
+  function openEmbed(widget: Widget) {
+    setEmbedCopied(false)
+    setModal({ type: 'embed', payload: widget })
+  }
 
   async function handleCreateWidget() {
     const name = createName.trim()
@@ -184,7 +185,7 @@ export default function WidgetsPage() {
                 {widget.status === 'live' ? (
                   <button
                     type="button"
-                    onClick={() => setModal({ type: 'embed', payload: widget })}
+                    onClick={() => openEmbed(widget)}
                     className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50"
                   >
                     Get Embed Code

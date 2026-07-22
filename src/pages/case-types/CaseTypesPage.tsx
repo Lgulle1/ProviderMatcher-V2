@@ -124,9 +124,14 @@ export default function CaseTypesPage() {
 
   const rows = data ?? EMPTY_CASE_TYPE_ROWS
 
-  useEffect(() => {
+  // `items` is the drag-reorderable copy of `rows`. Resyncing it during render
+  // when the query returns new data — rather than from an effect — avoids
+  // painting one frame of the stale order after every refetch.
+  const [syncedRows, setSyncedRows] = useState(rows)
+  if (rows !== syncedRows) {
+    setSyncedRows(rows)
     setItems(rows.map((r) => r.caseType))
-  }, [rows])
+  }
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -157,15 +162,20 @@ export default function CaseTypesPage() {
     }
   }, [modal.type])
 
-  useEffect(() => {
-    if (modal.type === 'add') {
-      setName('')
-      setFormError('')
-    } else if (modal.type === 'edit' && modal.payload) {
-      setName(modal.payload.name)
-      setFormError('')
-    }
-  }, [modal])
+  // Seed the form as the dialog is opened rather than in an effect reacting to
+  // `modal`. The effect ran a second render on every open, and these are the
+  // only paths that reach the add/edit dialogs.
+  function openAdd() {
+    setName('')
+    setFormError('')
+    setModal({ type: 'add' })
+  }
+
+  function openEdit(target: CaseType) {
+    setName(target.name)
+    setFormError('')
+    setModal({ type: 'edit', payload: target })
+  }
 
   const archivePayload = modal.type === 'archive' ? modal.payload : undefined
   const archiveOfferingCount = archivePayload
@@ -284,7 +294,7 @@ export default function CaseTypesPage() {
         <button
           type="button"
           className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
-          onClick={() => setModal({ type: 'add' })}
+          onClick={openAdd}
         >
           <Plus className="h-4 w-4" />
           + Add Case Type
@@ -302,7 +312,7 @@ export default function CaseTypesPage() {
             <button
               type="button"
               className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
-              onClick={() => setModal({ type: 'add' })}
+              onClick={openAdd}
             >
               + Add Case Type
             </button>
@@ -319,7 +329,7 @@ export default function CaseTypesPage() {
                   key={caseType.id}
                   caseType={caseType}
                   offeringCount={offeringCount}
-                  onEdit={() => setModal({ type: 'edit', payload: caseType })}
+                  onEdit={() => openEdit(caseType)}
                   onArchive={() => setModal({ type: 'archive', payload: caseType })}
                 />
               )

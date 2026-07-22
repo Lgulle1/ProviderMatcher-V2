@@ -78,21 +78,25 @@ export default function LocationsPage() {
     }
   }, [modal.type])
 
-  useEffect(() => {
-    if (modal.type === 'add') {
-      setForm(emptyForm)
-      setFormError('')
-    } else if (modal.type === 'edit' && modal.payload) {
-      const p = modal.payload
-      setForm({
-        name: p.name,
-        address: p.address ?? '',
-        phone: p.phone ?? '',
-        directions_url: p.directions_url ?? '',
-      })
-      setFormError('')
-    }
-  }, [modal])
+  // Seed the form as the dialog is opened rather than in an effect reacting to
+  // `modal`. The effect ran a second render on every open, and these are the
+  // only paths that reach the add/edit dialogs.
+  function openAdd() {
+    setForm(emptyForm)
+    setFormError('')
+    setModal({ type: 'add' })
+  }
+
+  function openEdit(target: Location) {
+    setForm({
+      name: target.name,
+      address: target.address ?? '',
+      phone: target.phone ?? '',
+      directions_url: target.directions_url ?? '',
+    })
+    setFormError('')
+    setModal({ type: 'edit', payload: target })
+  }
 
   const archivePayload = modal.type === 'archive' ? modal.payload : undefined
   const archiveOfferingCount = archivePayload
@@ -180,7 +184,7 @@ export default function LocationsPage() {
         <button
           type="button"
           className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
-          onClick={() => setModal({ type: 'add' })}
+          onClick={openAdd}
         >
           <Plus className="h-4 w-4" />
           + Add Location
@@ -198,7 +202,7 @@ export default function LocationsPage() {
             <button
               type="button"
               className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
-              onClick={() => setModal({ type: 'add' })}
+              onClick={openAdd}
             >
               + Add Location
             </button>
@@ -235,7 +239,7 @@ export default function LocationsPage() {
                         type="button"
                         className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-indigo-600"
                         aria-label="Edit location"
-                        onClick={() => setModal({ type: 'edit', payload: location })}
+                        onClick={() => openEdit(location)}
                       >
                         <Pencil className="h-4 w-4" />
                       </button>

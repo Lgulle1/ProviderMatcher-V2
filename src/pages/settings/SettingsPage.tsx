@@ -63,9 +63,16 @@ export default function SettingsPage() {
     })
   }, [org, reset])
 
-  useEffect(() => {
-    setAccountName(user?.name ?? '')
-  }, [user?.id, user?.name])
+  // Reseed the editable account name whenever the stored user changes, during
+  // render rather than in an effect. Comparing the source value (not just the
+  // id) keeps an in-progress edit from being clobbered by an unrelated
+  // re-render, which is what the effect's dependency list was expressing.
+  const [syncedUserName, setSyncedUserName] = useState<string | null>(null)
+  const currentUserName = user?.name ?? ''
+  if (syncedUserName !== currentUserName) {
+    setSyncedUserName(currentUserName)
+    setAccountName(currentUserName)
+  }
 
   const closePasswordModal = useCallback(() => {
     setModal({ type: null })
