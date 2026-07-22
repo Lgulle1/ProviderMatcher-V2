@@ -30,6 +30,7 @@ import type {
   Category,
   Constraint,
   Location as OrgLocation,
+  Offering,
 } from '../../types/database'
 
 interface ProviderFormValues {
@@ -65,11 +66,11 @@ export default function ProviderProfilePage() {
   const [phoneLinks, setPhoneLinks] = useState<Record<string, string>>({})
   const [modal, setModal] = useState<{
     type: 'add-offering' | 'edit-offering' | 'delete-offering' | null
-    payload?: any
+    payload?: Offering
   }>({ type: null })
   const [offeringCaseTypeId, setOfferingCaseTypeId] = useState('')
   const [offeringDraftLocationIds, setOfferingDraftLocationIds] = useState<string[]>([])
-  const [offeringConstraints, setOfferingConstraints] = useState<Record<string, any>>({})
+  const [offeringConstraints, setOfferingConstraints] = useState<Record<string, unknown>>({})
   const [offeringError, setOfferingError] = useState('')
   const [offeringSaving, setOfferingSaving] = useState(false)
 
@@ -155,6 +156,20 @@ export default function ProviderProfilePage() {
     enabled: Boolean(orgId),
   })
 
+  // Seed the editable copies of the fetched provider during render rather than
+  // from an effect, so the form never paints one frame of the previous
+  // provider's values after navigating between profiles.
+  const [syncedProvider, setSyncedProvider] = useState(provider)
+  if (provider && provider !== syncedProvider) {
+    setSyncedProvider(provider)
+    setCategoryIds(provider.category_ids ?? [])
+    setOriginalCategoryIds(provider.category_ids ?? [])
+    setBookingMode(provider.booking_mode ?? 'default')
+    setPhoneMode(provider.phone_mode ?? 'default')
+  }
+
+  // react-hook-form's reset() is an external store write, so it stays in an
+  // effect rather than moving into render.
   useEffect(() => {
     if (!provider) return
     reset({
@@ -164,22 +179,20 @@ export default function ProviderProfilePage() {
       email: provider.email ?? '',
       bio_link: provider.bio_link ?? '',
     })
-    setCategoryIds(provider.category_ids ?? [])
-    setOriginalCategoryIds(provider.category_ids ?? [])
-    setBookingMode(provider.booking_mode ?? 'default')
-    setPhoneMode(provider.phone_mode ?? 'default')
   }, [provider, reset])
 
-  useEffect(() => {
+  const [syncedProviderLocations, setSyncedProviderLocations] = useState(providerLocations)
+  if (providerLocations !== syncedProviderLocations) {
     const nextBooking: Record<string, string> = {}
     const nextPhone: Record<string, string> = {}
     providerLocations.forEach((entry) => {
       nextBooking[entry.location_id] = entry.booking_link ?? ''
       nextPhone[entry.location_id] = entry.phone ?? ''
     })
+    setSyncedProviderLocations(providerLocations)
     setBookingLinks(nextBooking)
     setPhoneLinks(nextPhone)
-  }, [providerLocations])
+  }
 
   useEffect(() => {
     if (modal.type !== null) {
@@ -197,19 +210,22 @@ export default function ProviderProfilePage() {
     }
   }, [modal.type])
 
-  useEffect(() => {
-    if (modal.type === 'edit-offering' && modal.payload) {
-      setOfferingCaseTypeId(modal.payload.case_type_id ?? '')
-      setOfferingDraftLocationIds(modal.payload.location_ids ?? [])
-      setOfferingConstraints(modal.payload.constraints ?? {})
-    }
-    if (modal.type === 'add-offering') {
-      setOfferingCaseTypeId('')
-      setOfferingDraftLocationIds([])
-      setOfferingConstraints({})
-      setOfferingError('')
-    }
-  }, [modal.type, modal.payload])
+  // Seed the offering form as the dialog is opened rather than in an effect
+  // reacting to `modal`; these are the only paths that reach it.
+  function openAddOffering() {
+    setOfferingCaseTypeId('')
+    setOfferingDraftLocationIds([])
+    setOfferingConstraints({})
+    setOfferingError('')
+    setModal({ type: 'add-offering' })
+  }
+
+  function openEditOffering(target: Offering) {
+    setOfferingCaseTypeId(target.case_type_id ?? '')
+    setOfferingDraftLocationIds(target.location_ids ?? [])
+    setOfferingConstraints(target.constraints ?? {})
+    setModal({ type: 'edit-offering', payload: target })
+  }
 
   const categoryMap = useMemo(
     () => new Map(categories.map((category) => [category.id, category.name])),
@@ -707,7 +723,7 @@ export default function ProviderProfilePage() {
           <button
             type="button"
             className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm text-white"
-            onClick={() => setModal({ type: 'add-offering' })}
+            onClick={openAddOffering}
           >
             + Add Offering
           </button>
@@ -773,13 +789,13 @@ export default function ProviderProfilePage() {
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      onClick={() => setModal({ type: 'edit-offering', payload: offering })}
+                      onClick={() => openEditOffering(offering)}
                     >
                       <Pencil className="h-4 w-4 cursor-pointer text-slate-400 hover:text-slate-600" />
                     </button>
                     <button
                       type="button"
-                      onClick={() => setModal({ type: 'delete-offering', payload: offering.id })}
+                      onClick={() => setModal({ type: 'delete-offering', payload: offering })}
                     >
                       <Trash2 className="h-4 w-4 cursor-pointer text-red-300 hover:text-red-500" />
                     </button>
@@ -877,7 +893,7 @@ export default function ProviderProfilePage() {
                         <input
                           type="number"
                           placeholder="Min"
-                          value={offeringConstraints[constraint.mapped_key] ?? ''}
+                          value={String(offeringConstraints[constraint.mapped_key] ?? '')}
                           onChange={(e) =>
                             setOfferingConstraints((prev) => ({
                               ...prev,
@@ -889,7 +905,7 @@ export default function ProviderProfilePage() {
                         <input
                           type="number"
                           placeholder="Max"
-                          value={offeringConstraints[constraint.secondary_mapped_key ?? ''] ?? ''}
+                          value={String(offeringConstraints[constraint.secondary_mapped_key ?? ''] ?? '')}
                           onChange={(e) =>
                             setOfferingConstraints((prev) => ({
                               ...prev,
@@ -903,7 +919,7 @@ export default function ProviderProfilePage() {
                     {constraint.type === 'exact' ? (
                       <input
                         type="text"
-                        value={offeringConstraints[constraint.mapped_key] ?? ''}
+                        value={String(offeringConstraints[constraint.mapped_key] ?? '')}
                         onChange={(e) =>
                           setOfferingConstraints((prev) => ({
                             ...prev,
@@ -946,7 +962,7 @@ export default function ProviderProfilePage() {
       confirmLabel="Remove"
       confirmVariant="danger"
       onConfirm={async () => {
-        const result = await archiveOffering(modal.payload)
+        const result = await archiveOffering(modal.payload!.id)
         if (!result.error) {
           queryClient.invalidateQueries({ queryKey: ['provider-offerings', id] })
           toast.success('Offering removed')

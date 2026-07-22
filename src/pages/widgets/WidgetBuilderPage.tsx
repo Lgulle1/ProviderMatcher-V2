@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   DndContext,
@@ -27,6 +27,7 @@ import { getLocations } from '../../lib/api/locations'
 import { getProviders } from '../../lib/api/providers'
 import { getQuestions } from '../../lib/api/questions'
 import { getWidget, publishWidget, unpublishWidget, updateWidget } from '../../lib/api/widgets'
+import { reconcileQuestionOrder } from '../../lib/widgetConfig'
 import { useAuthStore } from '../../stores/authStore'
 import type { Question, Widget } from '../../types/database'
 
@@ -145,7 +146,10 @@ export default function WidgetBuilderPage() {
   const [actionLoading, setActionLoading] = useState(false)
   const [embedCopied, setEmbedCopied] = useState(false)
 
-  const lastPersistedRef = useRef<string | null>(null)
+  // The last config known to match the server. State, not a ref: it is written
+  // during hydration (in render), and a ref write there is not safe under
+  // concurrent rendering.
+  const [lastPersisted, setLastPersisted] = useState<string | null>(null)
   const saveStatusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const sensors = useSensors(
@@ -186,40 +190,35 @@ export default function WidgetBuilderPage() {
   const scopeDataPending =
     Boolean(widget) && (providersPending || caseTypesPending || locationsPending || questionsPending)
 
-  useLayoutEffect(() => {
-    if (!widget) {
-      return
-    }
+  // Hydrate the editor from the fetched widget during render rather than in a
+  // layout effect. The persisted baseline has to be set before the autosave
+  // effect below runs, otherwise hydration itself looks like an edit and gets
+  // written straight back; doing both in render keeps that ordering guaranteed
+  // rather than relying on layout-effects-before-passive-effects.
+  const [hydratedWidgetId, setHydratedWidgetId] = useState<string | null>(null)
+  if (widget && widget.id !== hydratedWidgetId) {
     const scoped = widget.scoped_question_ids ?? []
-    let order = Array.isArray(widget.question_order) ? [...widget.question_order] : []
-    order = order.filter((qid: string) => typeof qid === 'string' && scoped.includes(qid))
-    for (const qid of scoped) {
-      if (!order.includes(qid)) {
-        order.push(qid)
-      }
+    const hydrated: Partial<Widget> = {
+      ...widget,
+      scoped_question_ids: scoped,
+      question_order: reconcileQuestionOrder(widget.question_order, scoped),
     }
-    setConfig({
-      ...widget,
-      scoped_question_ids: scoped,
-      question_order: order,
-    })
+
+    setHydratedWidgetId(widget.id)
+    setConfig(hydrated)
     setNameDraft(widget.name)
-    lastPersistedRef.current = JSON.stringify({
-      ...widget,
-      scoped_question_ids: scoped,
-      question_order: order,
-    })
+    setLastPersisted(JSON.stringify(hydrated))
     setProviderScopeUi(widget.scoped_provider_ids.length > 0 ? 'specific' : 'all')
     setCaseTypeScopeUi(widget.scoped_case_type_ids.length > 0 ? 'specific' : 'all')
     setLocationScopeUi(widget.scoped_location_ids.length > 0 ? 'specific' : 'all')
-  }, [widget?.id])
+  }
 
   useEffect(() => {
     if (!id) {
       return
     }
     const serialized = JSON.stringify(config)
-    if (!lastPersistedRef.current || serialized === lastPersistedRef.current) {
+    if (!lastPersisted || serialized === lastPersisted) {
       return
     }
 
@@ -227,7 +226,7 @@ export default function WidgetBuilderPage() {
       setSaveStatus('saving')
       const { error } = await updateWidget(id, omitMeta(config))
       if (!error) {
-        lastPersistedRef.current = serialized
+        setLastPersisted(serialized)
         setSaveStatus('saved')
         if (saveStatusTimeoutRef.current) {
           clearTimeout(saveStatusTimeoutRef.current)
@@ -242,7 +241,9 @@ export default function WidgetBuilderPage() {
     }, 500)
 
     return () => clearTimeout(handle)
-  }, [config, id])
+    // Re-running when the baseline moves is what stops the loop: after a save
+    // sets it to the serialized config, the equality check above returns early.
+  }, [config, id, lastPersisted])
 
   const filteredProviders = useMemo(() => {
     const q = providerSearch.trim().toLowerCase()
@@ -396,16 +397,16 @@ export default function WidgetBuilderPage() {
       toastApi.error(error)
       return
     }
-    setConfig((c) => {
-      const next = {
-        ...c,
-        status: 'live' as const,
-        published_at: new Date().toISOString(),
-        published_snapshot: snapshot,
-      }
-      lastPersistedRef.current = JSON.stringify(next)
-      return next
-    })
+    // Publishing already persisted this, so move the baseline with it —
+    // otherwise the autosave effect sees a diff and writes straight back.
+    const published: Partial<Widget> = {
+      ...config,
+      status: 'live' as const,
+      published_at: new Date().toISOString(),
+      published_snapshot: snapshot,
+    }
+    setConfig(published)
+    setLastPersisted(JSON.stringify(published))
     await queryClient.invalidateQueries({ queryKey: ['widget', id] })
     await queryClient.invalidateQueries({ queryKey: ['widgets', orgId] })
     setModal({ type: null })
@@ -423,16 +424,14 @@ export default function WidgetBuilderPage() {
       toastApi.error(error)
       return
     }
-    setConfig((c) => {
-      const next = {
-        ...c,
-        status: 'draft' as const,
-        published_at: null,
-        published_snapshot: null,
-      }
-      lastPersistedRef.current = JSON.stringify(next)
-      return next
-    })
+    const unpublished: Partial<Widget> = {
+      ...config,
+      status: 'draft' as const,
+      published_at: null,
+      published_snapshot: null,
+    }
+    setConfig(unpublished)
+    setLastPersisted(JSON.stringify(unpublished))
     await queryClient.invalidateQueries({ queryKey: ['widget', id] })
     await queryClient.invalidateQueries({ queryKey: ['widgets', orgId] })
     setModal({ type: null })
