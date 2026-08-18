@@ -33,7 +33,13 @@ import type {
   Constraint,
   Location as OrgLocation,
   Offering,
+  ProviderLocation,
 } from '../../types/database'
+
+// Stable singleton, not a fresh `[]` literal — a per-render default would
+// change identity every render, which is exactly the bug that used to make
+// this page infinite-loop (see the comment at providerLocationsData below).
+const EMPTY_PROVIDER_LOCATIONS: ProviderLocation[] = []
 
 interface ProviderFormValues {
   name: string
@@ -106,7 +112,7 @@ export default function ProviderProfilePage() {
     enabled: Boolean(orgId),
   })
 
-  const { data: providerLocations = [], isLoading: providerLocationsLoading } = useQuery({
+  const { data: providerLocationsData, isLoading: providerLocationsLoading } = useQuery({
     queryKey: ['provider-locations', id],
     queryFn: () => getProviderLocations(id as string),
     enabled: Boolean(id),
@@ -183,18 +189,27 @@ export default function ProviderProfilePage() {
     })
   }, [provider, reset])
 
-  const [syncedProviderLocations, setSyncedProviderLocations] = useState(providerLocations)
-  if (providerLocations !== syncedProviderLocations) {
+  // Guard on the raw (undefaulted) query data, not a `?? []`-defaulted local:
+  // that default re-evaluates to a brand-new array every render while the
+  // query is still loading, which never compares equal to itself and used to
+  // fire this render-phase update every single render — an infinite loop
+  // that trips React's "Too many re-renders" the moment any other query on
+  // this page resolves first (near-guaranteed, since there are several).
+  // `undefined` stays referentially stable across renders, so gating on it
+  // being truthy (matching the syncedProvider pattern above) fixes it.
+  const [syncedProviderLocations, setSyncedProviderLocations] = useState(providerLocationsData)
+  if (providerLocationsData && providerLocationsData !== syncedProviderLocations) {
     const nextBooking: Record<string, string> = {}
     const nextPhone: Record<string, string> = {}
-    providerLocations.forEach((entry) => {
+    providerLocationsData.forEach((entry) => {
       nextBooking[entry.location_id] = entry.booking_link ?? ''
       nextPhone[entry.location_id] = entry.phone ?? ''
     })
-    setSyncedProviderLocations(providerLocations)
+    setSyncedProviderLocations(providerLocationsData)
     setBookingLinks(nextBooking)
     setPhoneLinks(nextPhone)
   }
+  const providerLocations = providerLocationsData ?? EMPTY_PROVIDER_LOCATIONS
 
   useEffect(() => {
     if (modal.type !== null) {
