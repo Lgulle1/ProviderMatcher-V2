@@ -330,7 +330,6 @@ export default function AnalyticsPage() {
   const [showAllCaseTypes, setShowAllCaseTypes] = useState(false)
   const [showAllProviders, setShowAllProviders] = useState(false)
   const [showAllImpressions, setShowAllImpressions] = useState(false)
-  const [showAllAppearance, setShowAllAppearance] = useState(false)
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['analytics-v2', orgId],
@@ -912,6 +911,7 @@ export default function AnalyticsPage() {
       </div>
 
       {/* Summary Cards — compact */}
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Overview</p>
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
         {/* Opens */}
         <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
@@ -972,6 +972,7 @@ export default function AnalyticsPage() {
       </div>
 
       {/* Funnel — full width */}
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Trends</p>
       <section className="mb-6 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-200 px-6 py-4">
           <h2 className="font-semibold text-slate-900">Funnel</h2>
@@ -996,7 +997,8 @@ export default function AnalyticsPage() {
         </div>
       </section>
 
-      {/* Case Type + Providers — side by side (compact tables, makes sense together) */}
+      {/* ── Patient behavior — two simple distribution cards, side by side */}
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Patient Behavior</p>
       <div className="mb-6 grid items-start gap-6 lg:grid-cols-2">
         <section className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-200 px-6 py-4">
@@ -1033,47 +1035,87 @@ export default function AnalyticsPage() {
 
         <section className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-200 px-6 py-4">
-            <h2 className="font-semibold text-slate-900">Top Providers</h2>
+            <div className="flex items-center gap-2">
+              <MousePointerClick className="h-4 w-4 text-indigo-600" aria-hidden />
+              <h2 className="font-semibold text-slate-900">Clicks per Session</h2>
+            </div>
+            <p className="mt-0.5 text-xs text-slate-500">Sessions with at least one provider click, by click count.</p>
           </div>
-          {providersByClicks.length === 0 ? (
-            <p className="px-6 py-8 text-center text-sm text-slate-500">No clicks yet.</p>
+          {clicksPerSessionHistogram.every(b => b.count === 0) ? (
+            <p className="px-6 py-8 text-center text-sm text-slate-500">No click sessions yet.</p>
           ) : (
-            <>
-              <div className="flex-1">
-                {(() => {
-                  const visible = showAllProviders ? providersByClicks : providersByClicks.slice(0, 10)
-                  const topClicks = visible[0]?.clicks ?? 0
-                  return visible.map((row, i) => {
-                    const pct = topClicks > 0 ? Math.round((row.clicks / topClicks) * 100) : 0
-                    return (
-                      <div key={row.id} className="border-b border-slate-100 px-6 py-3 last:border-0">
-                        <div className="mb-1.5 flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-medium text-slate-500">{i + 1}</span>
-                            <span className="text-sm font-medium text-slate-800">{row.name}</span>
-                          </div>
-                          <span className="text-xs text-slate-500">{row.clicks} clicks</span>
-                        </div>
-                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-                          <div className="h-full rounded-full bg-indigo-400" style={{ width: `${pct}%` }} />
-                        </div>
-                      </div>
-                    )
-                  })
-                })()}
-              </div>
-              {providersByClicks.length > 10 && (
-                <div className="border-t border-slate-100 px-6 py-3 text-center">
-                  <button type="button" onClick={() => setShowAllProviders(v => !v)}
-                    className="text-sm font-medium text-indigo-600 hover:text-indigo-700">
-                    {showAllProviders ? 'Show less' : `Show all ${providersByClicks.length} providers`}
-                  </button>
+            <div className="flex-1">
+              {clicksPerSessionHistogram.map(row => (
+                <div key={row.label} className="border-b border-slate-100 px-6 py-3 last:border-0">
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <span className="text-sm font-medium text-slate-800">{row.label}</span>
+                    <span className="text-xs text-slate-500">{row.count} · {row.pct}%</span>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                    <div className="h-full rounded-full bg-indigo-400" style={{ width: `${row.pct}%` }} />
+                  </div>
                 </div>
-              )}
-            </>
+              ))}
+            </div>
           )}
         </section>
       </div>
+
+      {/* ── Providers — one performance table (was two overlapping cards showing
+          the same shown/clicks numbers in different shapes) plus the separate
+          audience-context table, back to back since both are provider-centric. */}
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Providers</p>
+      <section className="mb-6 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 px-6 py-4">
+          <div className="flex items-center gap-2">
+            <Eye className="h-4 w-4 text-indigo-600" aria-hidden />
+            <h2 className="font-semibold text-slate-900">Provider Performance</h2>
+          </div>
+          <p className="mt-0.5 text-xs text-slate-500">Impressions, clicks, CTR, and average list position per provider, ranked by clicks.</p>
+        </div>
+        {providersByClicks.length === 0 ? (
+          <p className="px-6 py-8 text-center text-sm text-slate-500">No data yet.</p>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-6 py-3 font-medium">#</th>
+                    <th className="px-6 py-3 font-medium">Provider</th>
+                    <th className="px-6 py-3 font-medium tabular-nums">Shown</th>
+                    <th className="px-6 py-3 font-medium tabular-nums">Clicks</th>
+                    <th className="px-6 py-3 font-medium tabular-nums">CTR</th>
+                    <th className="px-6 py-3 font-medium tabular-nums">Avg Position</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(showAllProviders ? providersByClicks : providersByClicks.slice(0, 10)).map((row, i) => (
+                    <tr key={row.id} className="border-t border-slate-100">
+                      <td className="px-6 py-3 text-slate-400">{i + 1}</td>
+                      <td className="px-6 py-3 font-medium text-slate-800">{row.name}</td>
+                      <td className="px-6 py-3 tabular-nums text-slate-700">{row.shown}</td>
+                      <td className="px-6 py-3 tabular-nums text-slate-700">{row.clicks}</td>
+                      <td className="px-6 py-3 tabular-nums text-slate-700">
+                        {row.ctr != null ? `${Math.round(row.ctr * 100)}%` : '—'}
+                      </td>
+                      <td className="px-6 py-3 tabular-nums text-slate-700">{row.avgPosition ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {providersByClicks.length > 10 && (
+              <div className="border-t border-slate-100 px-6 py-3 text-center">
+                <button type="button" onClick={() => setShowAllProviders(v => !v)}
+                  className="text-sm font-medium text-indigo-600 hover:text-indigo-700">
+                  {showAllProviders ? 'Show less' : `Show all ${providersByClicks.length} providers`}
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </section>
 
       {/* Provider Impressions — when each provider was shown, what was the typical session? */}
       <section className="mb-6 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -1121,19 +1163,20 @@ export default function AnalyticsPage() {
         )}
       </section>
 
-      {/* Position performance, provider appearance, clicks per session */}
-      <div className="mb-6 grid items-start gap-6 lg:grid-cols-3">
-        <section className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 px-6 py-4">
-            <div className="flex items-center gap-2">
-              <ListOrdered className="h-4 w-4 text-indigo-600" aria-hidden />
-              <h2 className="font-semibold text-slate-900">Position Performance</h2>
-            </div>
-            <p className="mt-0.5 text-xs text-slate-500">How often each result slot was shown and clicked.</p>
+      {/* ── Result list mechanics — how the slot itself performs, independent of provider */}
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Result List</p>
+      <section className="mb-6 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 px-6 py-4">
+          <div className="flex items-center gap-2">
+            <ListOrdered className="h-4 w-4 text-indigo-600" aria-hidden />
+            <h2 className="font-semibold text-slate-900">Position Performance</h2>
           </div>
-          {positionPerformance.every(r => r.shown === 0) ? (
-            <p className="px-6 py-8 text-center text-sm text-slate-500">No position data yet.</p>
-          ) : (
+          <p className="mt-0.5 text-xs text-slate-500">How often each result slot was shown and clicked.</p>
+        </div>
+        {positionPerformance.every(r => r.shown === 0) ? (
+          <p className="px-6 py-8 text-center text-sm text-slate-500">No position data yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
@@ -1156,86 +1199,11 @@ export default function AnalyticsPage() {
                 ))}
               </tbody>
             </table>
-          )}
-        </section>
-
-        <section className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 px-6 py-4">
-            <div className="flex items-center gap-2">
-              <Eye className="h-4 w-4 text-indigo-600" aria-hidden />
-              <h2 className="font-semibold text-slate-900">Provider Appearance Report</h2>
-            </div>
-            <p className="mt-0.5 text-xs text-slate-500">Impressions, clicks, CTR, and average list position per provider.</p>
           </div>
-          {providersByClicks.length === 0 ? (
-            <p className="px-6 py-8 text-center text-sm text-slate-500">No data yet.</p>
-          ) : (
-            <>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="px-6 py-3 font-medium">Provider</th>
-                      <th className="px-6 py-3 font-medium tabular-nums">Shown</th>
-                      <th className="px-6 py-3 font-medium tabular-nums">Clicks</th>
-                      <th className="px-6 py-3 font-medium tabular-nums">CTR</th>
-                      <th className="px-6 py-3 font-medium tabular-nums">Avg Position</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(showAllAppearance ? providersByClicks : providersByClicks.slice(0, 10)).map(row => (
-                      <tr key={row.id} className="border-t border-slate-100">
-                        <td className="px-6 py-3 font-medium text-slate-800">{row.name}</td>
-                        <td className="px-6 py-3 tabular-nums text-slate-700">{row.shown}</td>
-                        <td className="px-6 py-3 tabular-nums text-slate-700">{row.clicks}</td>
-                        <td className="px-6 py-3 tabular-nums text-slate-700">
-                          {row.ctr != null ? `${Math.round(row.ctr * 100)}%` : '—'}
-                        </td>
-                        <td className="px-6 py-3 tabular-nums text-slate-700">{row.avgPosition ?? '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {providersByClicks.length > 10 && (
-                <div className="border-t border-slate-100 px-6 py-3 text-center">
-                  <button type="button" onClick={() => setShowAllAppearance(v => !v)}
-                    className="text-sm font-medium text-indigo-600 hover:text-indigo-700">
-                    {showAllAppearance ? 'Show less' : `Show all ${providersByClicks.length} providers`}
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-        </section>
+        )}
+      </section>
 
-        <section className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 px-6 py-4">
-            <div className="flex items-center gap-2">
-              <MousePointerClick className="h-4 w-4 text-indigo-600" aria-hidden />
-              <h2 className="font-semibold text-slate-900">Clicks per Session</h2>
-            </div>
-            <p className="mt-0.5 text-xs text-slate-500">Sessions with at least one provider click, by click count.</p>
-          </div>
-          {clicksPerSessionHistogram.every(b => b.count === 0) ? (
-            <p className="px-6 py-8 text-center text-sm text-slate-500">No click sessions yet.</p>
-          ) : (
-            <div className="flex-1">
-              {clicksPerSessionHistogram.map(row => (
-                <div key={row.label} className="border-b border-slate-100 px-6 py-3 last:border-0">
-                  <div className="mb-1.5 flex items-center justify-between">
-                    <span className="text-sm font-medium text-slate-800">{row.label}</span>
-                    <span className="text-xs text-slate-500">{row.count} · {row.pct}%</span>
-                  </div>
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-                    <div className="h-full rounded-full bg-indigo-400" style={{ width: `${row.pct}%` }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Session Detail</p>
 
       {/* Session Log — full width, collapsed by default */}
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
