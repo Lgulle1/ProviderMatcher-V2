@@ -1,73 +1,62 @@
-# React + TypeScript + Vite
+# ProviderMatcher V2
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Admin app for configuring provider-matching widgets, clinical routing rules, and analytics. Built with React, TypeScript, Vite, and Supabase.
 
-Currently, two official plugins are available:
+## Local development
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm ci
+cp .env.example .env.local
+# Fill in VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env.local
+# Optional: set VITE_ENABLE_SIGNUP=true to allow public sign-up (default: invite-only)
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Production build
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm ci
+npm run build
 ```
+
+The production bundle is written to `dist/`.
+
+## Deploy to Vercel
+
+| Setting | Value |
+|---------|--------|
+| **Build command** | `npm run build` |
+| **Output directory** | `dist` |
+| **Install command** | `npm ci` (default) |
+
+### Required environment variables
+
+Set these in the Vercel project **Environment Variables** settings:
+
+| Variable | Description |
+|----------|-------------|
+| `VITE_SUPABASE_URL` | Supabase project URL (e.g. `https://your-project.supabase.co`) |
+| `VITE_SUPABASE_ANON_KEY` | Supabase anonymous (public) API key |
+| `VITE_ENABLE_SIGNUP` | Optional. Must be exactly `true` to show sign-up on the login page. Any other value (including unset) keeps sign-up hidden and shows an invite-only message. |
+
+See `.env.example` for a template.
+
+> **Warning:** Never add `SUPABASE_SERVICE_ROLE_KEY` to Vercel or any other client-facing deployment. The service role key bypasses Row Level Security and must only be used in trusted server-side contexts (e.g. Supabase Edge Functions, local scripts).
+
+SPA routing and security headers are configured in `vercel.json`.
+
+## Tenant isolation tests (staging only)
+
+Remote Supabase RLS tests live in `tests/tenant-isolation/`. They require a **staging** project and a local `.env.test.local` file (see `.env.test.example`).
+
+```bash
+cp .env.test.example .env.test.local
+# Configure staging credentials; set ALLOW_REMOTE_SUPABASE_TESTS=true
+npm run test:tenant
+```
+
+See [tests/tenant-isolation/README.md](tests/tenant-isolation/README.md) for full setup and safety guards. **Do not point test env vars at production.**
+
+## Widget (separate deploy)
+
+The embeddable widget lives in `widget/` and is deployed separately (e.g. GitHub Pages via `.github/workflows/deploy-widget.yml`). It is not part of the Vercel admin app build.

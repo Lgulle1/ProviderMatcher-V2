@@ -105,3 +105,22 @@ export async function uploadProviderImage(
 
   return { url: publicUrl, error: null }
 }
+
+export async function removeProviderImage(
+  providerId: string,
+  currentImageUrl: string
+): Promise<{ error: string | null }> {
+  // Clearing image_url is what actually matters to the user — try to clean up
+  // the stored file too, but a storage failure shouldn't block that.
+  try {
+    const path = decodeURIComponent(new URL(currentImageUrl).pathname).split('/provider-images/')[1]
+    if (path) {
+      await supabase.storage.from('provider-images').remove([path])
+    }
+  } catch {
+    /* best-effort cleanup only */
+  }
+
+  const { error } = await supabase.from('providers').update({ image_url: null }).eq('id', providerId)
+  return { error: error?.message ?? null }
+}

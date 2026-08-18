@@ -7,8 +7,6 @@ export interface Organization {
   onboarding_completed: boolean
   default_booking_mode: 'simple' | 'advanced'
   default_phone_mode: 'simple' | 'advanced'
-  booking_fairness_scope: 'org' | 'widget'
-  booking_fairness_window: 'all' | '30d' | '7d'
   created_at: string
   updated_at: string
 }
@@ -143,6 +141,12 @@ export interface Widget {
   fallback_message: string | null
   show_worth_the_drive: boolean
   embed_mode: 'floating' | 'inline'
+  open_delay_enabled: boolean
+  open_delay_seconds: number
+  button_animation: 'none' | 'shake' | 'wobble' | 'pulse' | 'bounce'
+  button_subtext: string | null
+  button_icon_type: 'none' | 'emoji' | 'image'
+  button_icon_value: string | null
   scoped_provider_ids: string[]
   scoped_case_type_ids: string[]
   scoped_location_ids: string[]

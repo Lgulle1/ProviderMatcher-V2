@@ -71,24 +71,10 @@ serve(async (req) => {
     const orgQuery = Promise.resolve(
       supabase
         .from('organizations')
-        .select('fallback_phone,fallback_message,allowed_domains,default_booking_mode,default_phone_mode,booking_fairness_scope,booking_fairness_window')
+        .select('fallback_phone,fallback_message,allowed_domains,default_booking_mode,default_phone_mode')
         .eq('id', orgId)
         .single()
     )
-
-    const widgetSessionsQuery = orgQuery.then(({ data: org }) => {
-      let query = supabase.from('widget_sessions').select('providers_clicked').eq('org_id', orgId)
-      if (org?.booking_fairness_scope === 'widget') {
-        query = query.eq('widget_id', widgetId)
-      }
-      const fairnessWindow = org?.booking_fairness_window
-      if (fairnessWindow === '30d' || fairnessWindow === '7d') {
-        const days = fairnessWindow === '30d' ? 30 : 7
-        const cutoffIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
-        query = query.gte('created_at', cutoffIso)
-      }
-      return query
-    })
 
     const [
       { data: org },
@@ -99,7 +85,6 @@ serve(async (req) => {
       { data: locations },
       { data: constraints },
       { data: allQuestions },
-      { data: widgetSessions },
     ] = await Promise.all([
       orgQuery,
       supabase.from('providers').select('*').eq('org_id', orgId).eq('is_archived', false),
@@ -109,7 +94,6 @@ serve(async (req) => {
       supabase.from('locations').select('*').eq('org_id', orgId).eq('is_archived', false),
       supabase.from('constraints').select('*').eq('org_id', orgId).eq('is_archived', false),
       supabase.from('questions').select('*').eq('org_id', orgId).eq('is_archived', false).order('order_rank'),
-      widgetSessionsQuery,
     ])
 
     // Enforce the org's domain list here, not just in the widget. The
@@ -122,14 +106,6 @@ serve(async (req) => {
         status: 403,
         headers: { ...corsHeaders(req, ALLOW_HEADERS, true), 'Content-Type': 'application/json' },
       })
-    }
-
-    const providerBookingCounts: Record<string, number> = {}
-    for (const row of widgetSessions ?? []) {
-      const clicked = (row.providers_clicked ?? []) as string[]
-      for (const providerId of clicked) {
-        providerBookingCounts[providerId] = (providerBookingCounts[providerId] ?? 0) + 1
-      }
     }
 
     const providers = scopedProviderIds
@@ -184,6 +160,12 @@ serve(async (req) => {
           show_worth_the_drive: widget.show_worth_the_drive,
           default_booking_mode: org?.default_booking_mode || 'simple',
           default_phone_mode: org?.default_phone_mode || 'simple',
+          open_delay_enabled: widget.open_delay_enabled,
+          open_delay_seconds: widget.open_delay_seconds,
+          button_animation: widget.button_animation,
+          button_subtext: widget.button_subtext,
+          button_icon_type: widget.button_icon_type,
+          button_icon_value: widget.button_icon_value,
         },
         providers,
         offerings,
@@ -193,7 +175,6 @@ serve(async (req) => {
         constraints: constraints ?? [],
         questions,
         providerLocations,
-        providerBookingCounts,
       }),
       {
         headers: {

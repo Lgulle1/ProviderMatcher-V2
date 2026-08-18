@@ -26,7 +26,7 @@ import { getCaseTypes } from '../../lib/api/caseTypes'
 import { getLocations } from '../../lib/api/locations'
 import { getProviders } from '../../lib/api/providers'
 import { getQuestions } from '../../lib/api/questions'
-import { getWidget, publishWidget, unpublishWidget, updateWidget } from '../../lib/api/widgets'
+import { getWidget, publishWidget, unpublishWidget, updateWidget, uploadWidgetIcon } from '../../lib/api/widgets'
 import { reconcileQuestionOrder } from '../../lib/widgetConfig'
 import { useAuthStore } from '../../stores/authStore'
 import type { Question, Widget } from '../../types/database'
@@ -145,6 +145,7 @@ export default function WidgetBuilderPage() {
   const [modal, setModal] = useState<{ type: 'publish' | 'unpublish' | null }>({ type: null })
   const [actionLoading, setActionLoading] = useState(false)
   const [embedCopied, setEmbedCopied] = useState(false)
+  const [iconUploading, setIconUploading] = useState(false)
 
   // The last config known to match the server. State, not a ref: it is written
   // during hydration (in render), and a ref write there is not safe under
@@ -339,6 +340,10 @@ export default function WidgetBuilderPage() {
   const primaryColor = config.primary_color ?? widget?.primary_color ?? '#4F46E5'
   const greeting = (config.greeting_text ?? widget?.greeting_text ?? '').trim() || 'Find a Provider'
   const buttonText = (config.button_text ?? widget?.button_text ?? '').trim() || 'Find a Provider'
+  const buttonSubtext = (config.button_subtext ?? widget?.button_subtext ?? '').trim()
+  const buttonIconType = config.button_icon_type ?? widget?.button_icon_type ?? 'none'
+  const buttonIconValue = config.button_icon_value ?? widget?.button_icon_value ?? ''
+  const buttonAnimation = config.button_animation ?? widget?.button_animation ?? 'none'
   const embedMode = config.embed_mode ?? widget?.embed_mode ?? 'floating'
 
   const reqProvidersOk =
@@ -353,6 +358,26 @@ export default function WidgetBuilderPage() {
   const embedScript = id
     ? `<script src="https://lgulle1.github.io/ProviderMatcher-V2/widget.js" data-widget-id="${id}"></script>`
     : ''
+
+  async function handleIconUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file || !id || !orgId) {
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toastApi.error('Image must be under 5MB')
+      return
+    }
+    setIconUploading(true)
+    const { url, error } = await uploadWidgetIcon(id, orgId, file)
+    setIconUploading(false)
+    if (error || !url) {
+      toastApi.error(error ?? 'Failed to upload image')
+      return
+    }
+    setConfig((c) => ({ ...c, button_icon_value: url }))
+  }
 
   async function copyEmbedCode() {
     if (!embedScript) {
@@ -390,6 +415,12 @@ export default function WidgetBuilderPage() {
       disclaimer_text: config.disclaimer_text ?? widget?.disclaimer_text ?? null,
       embed_mode: config.embed_mode ?? widget?.embed_mode ?? 'floating',
       show_worth_the_drive: config.show_worth_the_drive ?? widget?.show_worth_the_drive ?? true,
+      open_delay_enabled: config.open_delay_enabled ?? widget?.open_delay_enabled ?? false,
+      open_delay_seconds: config.open_delay_seconds ?? widget?.open_delay_seconds ?? 5,
+      button_animation: config.button_animation ?? widget?.button_animation ?? 'none',
+      button_subtext: config.button_subtext ?? widget?.button_subtext ?? null,
+      button_icon_type: config.button_icon_type ?? widget?.button_icon_type ?? 'none',
+      button_icon_value: config.button_icon_value ?? widget?.button_icon_value ?? null,
     }
     const { error } = await publishWidget(id, snapshot)
     setActionLoading(false)
@@ -898,16 +929,157 @@ export default function WidgetBuilderPage() {
                 </div>
 
                 {embedMode === 'floating' ? (
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700">Button Text</label>
-                    <input
-                      type="text"
-                      value={config.button_text ?? widget.button_text ?? 'Find a Provider'}
-                      onChange={(e) => setConfig((c) => ({ ...c, button_text: e.target.value }))}
-                      className="w-full max-w-md rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                      placeholder="Find a Provider"
-                    />
-                  </div>
+                  <>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-slate-700">Button Text</label>
+                      <input
+                        type="text"
+                        value={config.button_text ?? widget.button_text ?? 'Find a Provider'}
+                        onChange={(e) => setConfig((c) => ({ ...c, button_text: e.target.value }))}
+                        className="w-full max-w-md rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                        placeholder="Find a Provider"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-slate-700">Button Subtext (optional)</label>
+                      <input
+                        type="text"
+                        value={config.button_subtext ?? widget.button_subtext ?? ''}
+                        onChange={(e) =>
+                          setConfig((c) => ({ ...c, button_subtext: e.target.value || null }))
+                        }
+                        className="w-full max-w-md rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                        placeholder="Takes less than 60 seconds"
+                      />
+                      <p className="mt-1 text-xs text-slate-500">A smaller line under the button text.</p>
+                    </div>
+
+                    <div>
+                      <span className="mb-2 block text-sm font-medium text-slate-700">Button Icon</span>
+                      <div className="flex flex-wrap gap-4">
+                        {(
+                          [
+                            ['none', 'None'],
+                            ['emoji', 'Emoji'],
+                            ['image', 'Photo'],
+                          ] as const
+                        ).map(([value, label]) => (
+                          <label key={value} className="flex cursor-pointer items-center gap-2">
+                            <input
+                              type="radio"
+                              name="button-icon-type"
+                              checked={(config.button_icon_type ?? widget.button_icon_type ?? 'none') === value}
+                              onChange={() => setConfig((c) => ({ ...c, button_icon_type: value }))}
+                              className="text-indigo-600"
+                            />
+                            <span className="text-sm text-slate-800">{label}</span>
+                          </label>
+                        ))}
+                      </div>
+                      {(config.button_icon_type ?? widget.button_icon_type) === 'emoji' ? (
+                        <input
+                          type="text"
+                          value={config.button_icon_value ?? (widget.button_icon_type === 'emoji' ? widget.button_icon_value ?? '' : '')}
+                          onChange={(e) => setConfig((c) => ({ ...c, button_icon_value: e.target.value }))}
+                          maxLength={8}
+                          className="mt-3 w-20 rounded-lg border border-slate-300 px-3 py-2 text-center text-lg"
+                          placeholder="👋"
+                        />
+                      ) : null}
+                      {(config.button_icon_type ?? widget.button_icon_type) === 'image' ? (
+                        <div className="mt-3 flex items-center gap-3">
+                          {(() => {
+                            const iconUrl =
+                              config.button_icon_value ??
+                              (widget.button_icon_type === 'image' ? widget.button_icon_value : null)
+                            return iconUrl ? (
+                              <img src={iconUrl} alt="" className="h-10 w-10 rounded-full object-cover" />
+                            ) : null
+                          })()}
+                          <label className="cursor-pointer rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                            {iconUploading ? 'Uploading…' : 'Upload Photo'}
+                            <input
+                              type="file"
+                              accept=".jpg,.jpeg,.png,.webp"
+                              className="hidden"
+                              onChange={(e) => void handleIconUpload(e)}
+                              disabled={iconUploading}
+                            />
+                          </label>
+                        </div>
+                      ) : null}
+                      <p className="mt-1 text-xs text-slate-500">
+                        Shown to the left of the button text — a waving-hand emoji or a real photo can make it feel
+                        like there&apos;s a person on the other end.
+                      </p>
+                    </div>
+
+                    <div>
+                      <span className="mb-2 block text-sm font-medium text-slate-700">Hover Animation</span>
+                      <select
+                        value={config.button_animation ?? widget.button_animation ?? 'none'}
+                        onChange={(e) =>
+                          setConfig((c) => ({
+                            ...c,
+                            button_animation: e.target.value as Widget['button_animation'],
+                          }))
+                        }
+                        className="w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      >
+                        <option value="none">None</option>
+                        <option value="shake">Shake</option>
+                        <option value="wobble">Wobble</option>
+                        <option value="pulse">Pulse</option>
+                        <option value="bounce">Bounce</option>
+                      </select>
+                      <p className="mt-1 text-xs text-slate-500">A subtle motion when someone hovers the button.</p>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={config.open_delay_enabled ?? widget.open_delay_enabled ?? false}
+                          onClick={() =>
+                            setConfig((c) => ({
+                              ...c,
+                              open_delay_enabled: !(c.open_delay_enabled ?? widget.open_delay_enabled ?? false),
+                            }))
+                          }
+                          className={[
+                            'relative h-6 w-11 shrink-0 rounded-full transition',
+                            config.open_delay_enabled ?? widget.open_delay_enabled ? 'bg-indigo-600' : 'bg-slate-200',
+                          ].join(' ')}
+                        >
+                          <span
+                            className={[
+                              'absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform',
+                              config.open_delay_enabled ?? widget.open_delay_enabled ? 'translate-x-5' : 'translate-x-0',
+                            ].join(' ')}
+                          />
+                        </button>
+                        <span className="text-sm text-slate-800">Delay before the button appears</span>
+                      </div>
+                      {config.open_delay_enabled ?? widget.open_delay_enabled ? (
+                        <div className="mt-2 flex items-center gap-2">
+                          <input
+                            type="number"
+                            min={0}
+                            max={300}
+                            value={config.open_delay_seconds ?? widget.open_delay_seconds ?? 5}
+                            onChange={(e) => {
+                              const n = Math.max(0, Math.min(300, Math.round(Number(e.target.value) || 0)))
+                              setConfig((c) => ({ ...c, open_delay_seconds: n }))
+                            }}
+                            className="w-24 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                          />
+                          <span className="text-sm text-slate-600">seconds before it pops up</span>
+                        </div>
+                      ) : null}
+                    </div>
+                  </>
                 ) : null}
 
                 <div>
@@ -935,30 +1107,37 @@ export default function WidgetBuilderPage() {
                   />
                 </div>
 
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={config.show_worth_the_drive ?? widget.show_worth_the_drive ?? false}
-                    onClick={() =>
-                      setConfig((c) => ({
-                        ...c,
-                        show_worth_the_drive: !(c.show_worth_the_drive ?? widget.show_worth_the_drive ?? false),
-                      }))
-                    }
-                    className={[
-                      'relative h-6 w-11 shrink-0 rounded-full transition',
-                      config.show_worth_the_drive ?? widget.show_worth_the_drive ? 'bg-indigo-600' : 'bg-slate-200',
-                    ].join(' ')}
-                  >
-                    <span
+                <div>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={config.show_worth_the_drive ?? widget.show_worth_the_drive ?? false}
+                      onClick={() =>
+                        setConfig((c) => ({
+                          ...c,
+                          show_worth_the_drive: !(c.show_worth_the_drive ?? widget.show_worth_the_drive ?? false),
+                        }))
+                      }
                       className={[
-                        'absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform',
-                        config.show_worth_the_drive ?? widget.show_worth_the_drive ? 'translate-x-5' : 'translate-x-0',
+                        'relative h-6 w-11 shrink-0 rounded-full transition',
+                        config.show_worth_the_drive ?? widget.show_worth_the_drive ? 'bg-indigo-600' : 'bg-slate-200',
                       ].join(' ')}
-                    />
-                  </button>
-                  <span className="text-sm text-slate-800">Show Worth the Drive</span>
+                    >
+                      <span
+                        className={[
+                          'absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform',
+                          config.show_worth_the_drive ?? widget.show_worth_the_drive ? 'translate-x-5' : 'translate-x-0',
+                        ].join(' ')}
+                      />
+                    </button>
+                    <span className="text-sm text-slate-800">Show providers outside the selected location</span>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">
+                    When on, a patient who picks a location still sees matching providers at other locations, in a
+                    clearly-labeled "Not at [location]" section below the local results — never mixed in as if they
+                    were local. Turn this off to only ever show providers at the selected location.
+                  </p>
                 </div>
               </div>
             </div>
@@ -1054,13 +1233,47 @@ export default function WidgetBuilderPage() {
             <div className="relative m-4 min-h-[220px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
               <div className="min-h-[180px] bg-slate-50 p-4">
                 <p className="text-sm text-slate-500">Configure your widget to see a preview</p>
+                {config.open_delay_enabled ?? widget.open_delay_enabled ? (
+                  <p className="mt-1 text-xs text-slate-400">
+                    Hover the button below — on the live site it won&apos;t appear for{' '}
+                    {config.open_delay_seconds ?? widget.open_delay_seconds ?? 5}s.
+                  </p>
+                ) : null}
               </div>
+              {buttonAnimation !== 'none' ? (
+                <style>{[
+                  '@keyframes pmp-shake{10%,90%{transform:translateX(-1px);}20%,80%{transform:translateX(2px);}30%,50%,70%{transform:translateX(-3px);}40%,60%{transform:translateX(3px);}}',
+                  '@keyframes pmp-wobble{0%{transform:rotate(0);}15%{transform:rotate(-3deg);}30%{transform:rotate(2.5deg);}45%{transform:rotate(-2deg);}60%{transform:rotate(1.5deg);}75%{transform:rotate(-1deg);}100%{transform:rotate(0);}}',
+                  '@keyframes pmp-pulse{0%,100%{transform:scale(1);}50%{transform:scale(1.04);}}',
+                  '@keyframes pmp-bounce{0%,100%{transform:translateY(0);}30%{transform:translateY(-4px);}50%{transform:translateY(0);}70%{transform:translateY(-2px);}100%{transform:translateY(0);}}',
+                  '.pmp-anim-shake:hover{animation:pmp-shake 0.5s ease-in-out;}',
+                  '.pmp-anim-wobble:hover{animation:pmp-wobble 0.6s ease-in-out;}',
+                  '.pmp-anim-pulse:hover{animation:pmp-pulse 0.8s ease-in-out infinite;}',
+                  '.pmp-anim-bounce:hover{animation:pmp-bounce 0.6s ease-in-out;}',
+                ].join('\n')}</style>
+              ) : null}
               <button
                 type="button"
-                className="absolute bottom-4 right-4 rounded-full px-5 py-2.5 text-sm font-medium text-white shadow-lg"
+                className={[
+                  'absolute bottom-4 right-4 flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium text-white shadow-lg',
+                  buttonAnimation !== 'none' ? `pmp-anim-${buttonAnimation}` : '',
+                ].join(' ')}
                 style={{ backgroundColor: primaryColor }}
               >
-                {buttonText}
+                {buttonIconType === 'emoji' && buttonIconValue ? (
+                  <span aria-hidden className="text-lg leading-none">
+                    {buttonIconValue}
+                  </span>
+                ) : null}
+                {buttonIconType === 'image' && buttonIconValue ? (
+                  <img src={buttonIconValue} alt="" className="h-6 w-6 shrink-0 rounded-full object-cover" />
+                ) : null}
+                <span className="flex flex-col items-start leading-tight">
+                  <span>{buttonText}</span>
+                  {buttonSubtext ? (
+                    <span className="text-[11px] font-medium opacity-85">{buttonSubtext}</span>
+                  ) : null}
+                </span>
               </button>
             </div>
           ) : (

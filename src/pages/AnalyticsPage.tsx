@@ -43,7 +43,7 @@ interface WidgetSession {
   providers_clicked: string[]
   providers_shown: string[]
   created_at: string
-  results_positions?: { provider_id: string; position: number; booking_count_at_time: number }[]
+  results_positions?: { provider_id: string; position: number }[]
   clicks_detail?: { provider_id: string; position_at_click: number | null; click_order: number; clicked_at: string }[]
 }
 

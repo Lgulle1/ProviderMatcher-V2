@@ -12,8 +12,6 @@ type OrgFormValues = {
   allowed_domains_text: string
   default_booking_mode: 'simple' | 'advanced'
   default_phone_mode: 'simple' | 'advanced'
-  booking_fairness_scope: 'org' | 'widget'
-  booking_fairness_window: 'all' | '30d' | '7d'
 }
 
 export default function SettingsPage() {
@@ -58,8 +56,6 @@ export default function SettingsPage() {
       allowed_domains_text: (org.allowed_domains ?? []).join('\n'),
       default_booking_mode: org.default_booking_mode ?? 'simple',
       default_phone_mode: org.default_phone_mode ?? 'simple',
-      booking_fairness_scope: org.booking_fairness_scope ?? 'org',
-      booking_fairness_window: org.booking_fairness_window ?? 'all',
     })
   }, [org, reset])
 
@@ -124,8 +120,6 @@ export default function SettingsPage() {
         allowed_domains,
         default_booking_mode: values.default_booking_mode,
         default_phone_mode: values.default_phone_mode,
-        booking_fairness_scope: values.booking_fairness_scope,
-        booking_fairness_window: values.booking_fairness_window,
       })
       .eq('id', org.id)
       .select()
@@ -294,37 +288,6 @@ export default function SettingsPage() {
               <option value="advanced">Advanced — Different number per location</option>
             </select>
           </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Provider Fairness Scope</label>
-            <ul className="mb-2 space-y-1 text-xs text-slate-500">
-              <li><span className="font-medium text-slate-600">Organization-wide</span> — a provider&apos;s booking count is shared across every widget in your org</li>
-              <li><span className="font-medium text-slate-600">Per-widget</span> — each widget tracks its own booking fairness independently</li>
-            </ul>
-            <select
-              {...register('booking_fairness_scope')}
-              className="w-full max-w-md rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            >
-              <option value="org">Organization-wide</option>
-              <option value="widget">Per-widget</option>
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Provider Fairness Window</label>
-            <ul className="mb-2 space-y-1 text-xs text-slate-500">
-              <li><span className="font-medium text-slate-600">All time</span> — every booking ever recorded counts toward fairness</li>
-              <li><span className="font-medium text-slate-600">Last 30 days</span> — only recent bookings count, so old activity doesn&apos;t permanently penalize a provider</li>
-              <li><span className="font-medium text-slate-600">Last 7 days</span> — fairness resets quickly, favors very recent balance</li>
-            </ul>
-            <select
-              {...register('booking_fairness_window')}
-              className="w-full max-w-md rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            >
-              <option value="all">All time</option>
-              <option value="30d">Last 30 days</option>
-              <option value="7d">Last 7 days</option>
-            </select>
-          </div>
-
           <button
             type="submit"
             disabled={!isDirty || orgSaving}

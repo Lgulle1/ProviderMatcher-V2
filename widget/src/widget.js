@@ -1,3 +1,5 @@
+import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shared/avatarPalette'
+
 ;(function () {
   'use strict'
 
@@ -196,7 +198,20 @@
         this.trackEvent('widget_opened')
         this.startFlow()
       } else {
-        this.createFloatingButton()
+        var delaySeconds = config.open_delay_enabled ? Number(config.open_delay_seconds) || 0 : 0
+        if (delaySeconds > 0) {
+          var self = this
+          setTimeout(function () {
+            // The shadow root only goes away if the host page removed us —
+            // nothing in this widget ever does, but guard anyway since this
+            // fires well after the initial render.
+            if (!self.shadow) return
+            var btn = self.createFloatingButton()
+            if (btn) btn.classList.add('pm-btn-enter')
+          }, delaySeconds * 1000)
+        } else {
+          this.createFloatingButton()
+        }
       }
       document.body.appendChild(host)
     },
@@ -206,9 +221,23 @@
       var style = document.createElement('style')
       style.textContent = [
         '*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}',
-        '.pm-btn{background:' +
+        '.pm-btn{display:flex;align-items:center;gap:10px;background:' +
           primaryColor +
-          ';color:white;border:none;border-radius:50px;padding:14px 24px;font-size:15px;font-weight:600;cursor:pointer;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,0.2);}',
+          ';color:white;border:none;border-radius:50px;padding:12px 22px;font-size:15px;font-weight:600;cursor:pointer;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,0.2);text-align:left;}',
+        '.pm-btn-icon{flex-shrink:0;display:flex;align-items:center;justify-content:center;width:26px;height:26px;font-size:18px;line-height:1;}',
+        '.pm-btn-icon img{width:26px;height:26px;border-radius:50%;object-fit:cover;display:block;}',
+        '.pm-btn-text{display:flex;flex-direction:column;line-height:1.3;}',
+        '.pm-btn-sub{font-size:11px;font-weight:500;opacity:0.85;margin-top:1px;}',
+        '@keyframes pm-btn-enter{0%{opacity:0;transform:translateY(8px) scale(0.94);}100%{opacity:1;transform:translateY(0) scale(1);}}',
+        '.pm-btn-enter{animation:pm-btn-enter 0.35s ease-out;}',
+        '@keyframes pm-shake{10%,90%{transform:translateX(-1px);}20%,80%{transform:translateX(2px);}30%,50%,70%{transform:translateX(-3px);}40%,60%{transform:translateX(3px);}}',
+        '@keyframes pm-wobble{0%{transform:rotate(0);}15%{transform:rotate(-3deg);}30%{transform:rotate(2.5deg);}45%{transform:rotate(-2deg);}60%{transform:rotate(1.5deg);}75%{transform:rotate(-1deg);}100%{transform:rotate(0);}}',
+        '@keyframes pm-pulse{0%,100%{transform:scale(1);}50%{transform:scale(1.04);}}',
+        '@keyframes pm-bounce{0%,100%{transform:translateY(0);}30%{transform:translateY(-4px);}50%{transform:translateY(0);}70%{transform:translateY(-2px);}100%{transform:translateY(0);}}',
+        '.pm-btn-anim-shake:hover{animation:pm-shake 0.5s ease-in-out;}',
+        '.pm-btn-anim-wobble:hover{animation:pm-wobble 0.6s ease-in-out;}',
+        '.pm-btn-anim-pulse:hover{animation:pm-pulse 0.8s ease-in-out infinite;}',
+        '.pm-btn-anim-bounce:hover{animation:pm-bounce 0.6s ease-in-out;}',
         '.pm-chat{width:380px;max-height:85vh;background:white;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.15);display:flex;flex-direction:column;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;}',
         '.pm-header{background:' +
           primaryColor +
@@ -240,6 +269,12 @@
         '.pm-section-title{font-weight:700;font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;padding:10px 0 4px;}',
         '.pm-cat-title{font-weight:600;font-size:14px;color:#1e293b;padding:4px 0 2px;}',
         '.pm-card{display:flex;flex-direction:column;background:#f8fafc;border-radius:12px;padding:12px;gap:0;}',
+        '.pm-card-outside{background:#fffbeb;border:1px solid #fde68a;}',
+        '.pm-outside-badge{display:inline-block;background:#f59e0b;color:white;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;padding:3px 8px;border-radius:6px;margin-bottom:8px;}',
+        '.pm-outside-section{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:8px 10px 2px;margin-top:8px;}',
+        '.pm-outside-title{display:flex;align-items:center;gap:6px;font-weight:700;font-size:12px;color:#92400e;text-transform:uppercase;letter-spacing:0.04em;}',
+        '.pm-outside-icon{font-size:13px;}',
+        '.pm-outside-sub{font-size:12px;color:#92400e;opacity:0.9;padding:4px 0 8px;line-height:1.4;}',
         '.pm-avatar{width:48px;height:48px;border-radius:50%;object-fit:cover;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;color:white;}',
         '.pm-info{flex:1;min-width:0;}',
         '.pm-name{font-weight:600;font-size:14px;color:#1e293b;}',
@@ -277,9 +312,45 @@
 
     createFloatingButton: function () {
       var self = this
+      var config = this.data.config || {}
       var btn = document.createElement('button')
-      btn.className = 'pm-btn'
-      btn.textContent = (this.data.config && this.data.config.button_text) || 'Find a Provider'
+      var animation = config.button_animation
+      btn.className = animation && animation !== 'none' ? 'pm-btn pm-btn-anim-' + animation : 'pm-btn'
+
+      var iconType = config.button_icon_type
+      var iconValue = config.button_icon_value
+      if (iconType === 'emoji' && iconValue) {
+        var iconEl = document.createElement('span')
+        iconEl.className = 'pm-btn-icon'
+        iconEl.setAttribute('aria-hidden', 'true')
+        iconEl.textContent = iconValue
+        btn.appendChild(iconEl)
+      } else if (iconType === 'image' && iconValue) {
+        var iconWrap = document.createElement('span')
+        iconWrap.className = 'pm-btn-icon'
+        var iconImg = document.createElement('img')
+        iconImg.src = iconValue
+        iconImg.alt = ''
+        iconImg.onerror = function () {
+          iconWrap.style.display = 'none'
+        }
+        iconWrap.appendChild(iconImg)
+        btn.appendChild(iconWrap)
+      }
+
+      var textWrap = document.createElement('span')
+      textWrap.className = 'pm-btn-text'
+      var titleEl = document.createElement('span')
+      titleEl.textContent = config.button_text || 'Find a Provider'
+      textWrap.appendChild(titleEl)
+      if (config.button_subtext) {
+        var subEl = document.createElement('span')
+        subEl.className = 'pm-btn-sub'
+        subEl.textContent = config.button_subtext
+        textWrap.appendChild(subEl)
+      }
+      btn.appendChild(textWrap)
+
       btn.onclick = function () {
         btn.remove()
         self.createChatContainer()
@@ -287,6 +358,7 @@
         self.startFlow()
       }
       this.shadow.appendChild(btn)
+      return btn
     },
 
     createChatContainer: function () {
@@ -902,6 +974,7 @@
 
     showResults: function () {
       var self = this
+      var config = this.data.config || {}
       this.state.phase = 'results'
       var seen = {}
       var unique = []
@@ -918,33 +991,22 @@
         this.showZeroResults()
         return
       }
-      var bookingCounts = (this.data && this.data.providerBookingCounts) || {}
-      unique.sort(function (a, b) {
-        return (bookingCounts[a.provider.id] || 0) - (bookingCounts[b.provider.id] || 0)
-      })
-      // Shuffle within groups of equal booking count so ties aren't stuck in a
-      // fixed order (e.g. every 0-booking provider gets an equal shot at
-      // position 1, not just whichever the DB happens to return first).
-      var i = 0
-      while (i < unique.length) {
-        var count = bookingCounts[unique[i].provider.id] || 0
-        var j = i + 1
-        while (j < unique.length && (bookingCounts[unique[j].provider.id] || 0) === count) {
-          j++
-        }
-        for (var k = j - 1; k > i; k--) {
-          var r = i + Math.floor(Math.random() * (k - i + 1))
-          var tmp = unique[k]
-          unique[k] = unique[r]
-          unique[r] = tmp
-        }
-        i = j
+      // Pure random order. A booking-count "fairness" sort used to run here
+      // (least-booked-first), but it penalized providers who cover more case
+      // types — someone who sees shoulder/hip/knee racked up "bookings"
+      // across all three and got bumped below a shoulder-only provider for
+      // shoulder patients specifically, which isn't fair at all. True random
+      // per render is the fair version.
+      for (var i = unique.length - 1; i > 0; i--) {
+        var j = Math.floor(Math.random() * (i + 1))
+        var tmp = unique[i]
+        unique[i] = unique[j]
+        unique[j] = tmp
       }
       var resultsPositions = unique.map(function (item, i) {
         return {
           provider_id: item.provider.id,
           position: i + 1,
-          booking_count_at_time: bookingCounts[item.provider.id] || 0,
         }
       })
       this.state.resultsPositions = resultsPositions
@@ -966,8 +1028,8 @@
       })
       var results = document.createElement('div')
       results.className = 'pm-results'
-      function appendResultCard(provider) {
-        var card = self.buildCard(provider)
+      function appendResultCard(provider, outsideArea) {
+        var card = self.buildCard(provider, outsideArea)
         var pos = positionByProvider[provider.id]
         if (pos) card.setAttribute('data-position', String(pos))
         results.appendChild(card)
@@ -1023,7 +1085,7 @@
         }
         results.appendChild(helpLink)
         unique.forEach(function (item) {
-          appendResultCard(item.provider)
+          appendResultCard(item.provider, false)
         })
       } else {
         var remaining = unique.slice()
@@ -1057,25 +1119,39 @@
             results.appendChild(noMatch)
           } else {
             atLoc.forEach(function (item) {
-              appendResultCard(item.provider)
+              appendResultCard(item.provider, false)
             })
           }
-          if (outsideLoc.length) {
+          // show_worth_the_drive gates this section entirely — the org can
+          // turn it off if they'd rather only ever show in-location matches.
+          if (outsideLoc.length && config.show_worth_the_drive !== false) {
+            var outsideWrap = document.createElement('div')
+            outsideWrap.className = 'pm-outside-section'
             var sec3 = document.createElement('div')
-            sec3.className = 'pm-section-title'
-            sec3.textContent = 'Providers outside ' + locName
-            results.appendChild(sec3)
+            sec3.className = 'pm-outside-title'
+            var sec3Icon = document.createElement('span')
+            sec3Icon.className = 'pm-outside-icon'
+            sec3Icon.setAttribute('aria-hidden', 'true')
+            sec3Icon.textContent = '⚠️'
+            sec3.appendChild(sec3Icon)
+            sec3.appendChild(document.createTextNode('Not at ' + locName))
+            outsideWrap.appendChild(sec3)
+            var sec3sub = document.createElement('div')
+            sec3sub.className = 'pm-outside-sub'
+            sec3sub.textContent =
+              'These providers treat this, but not at ' + locName + ' — only at another location.'
+            outsideWrap.appendChild(sec3sub)
+            results.appendChild(outsideWrap)
             outsideLoc.forEach(function (item) {
-              appendResultCard(item.provider)
+              appendResultCard(item.provider, true)
             })
           }
         } else {
           remaining.forEach(function (item) {
-            appendResultCard(item.provider)
+            appendResultCard(item.provider, false)
           })
         }
       }
-      var config = this.data.config || {}
       if (config.disclaimer_text) {
         var disc = document.createElement('div')
         disc.className = 'pm-disclaimer'
@@ -1160,7 +1236,7 @@
       })
     },
 
-    buildCard: function (provider) {
+    buildCard: function (provider, outsideArea) {
       var self = this
       var config = this.data.config || {}
 
@@ -1177,7 +1253,14 @@
 
       // Build card
       var card = document.createElement('div')
-      card.className = 'pm-card'
+      card.className = outsideArea ? 'pm-card pm-card-outside' : 'pm-card'
+
+      if (outsideArea) {
+        var outsideBadge = document.createElement('div')
+        outsideBadge.className = 'pm-outside-badge'
+        outsideBadge.textContent = '📍 Not at your selected location'
+        card.appendChild(outsideBadge)
+      }
 
       // Avatar
       var avatar
@@ -1187,13 +1270,13 @@
         avatar.alt = provider.name
         avatar.className = 'pm-avatar'
       } else {
+        // Same palette + initials logic as the dashboard's provider cards
+        // (src/shared/avatarPalette.ts) — a provider with no photo should
+        // look identical here and in the app.
         avatar = document.createElement('div')
         avatar.className = 'pm-avatar'
-        var colors = ['#6366f1','#8b5cf6','#a855f7','#3b82f6','#0ea5e9','#06b6d4','#10b981','#22c55e','#f59e0b','#f97316','#ef4444','#ec4899','#d946ef','#14b8a6','#84cc16','#e11d48','#7c3aed','#2563eb','#0891b2','#059669']
-        var idx = provider.name.split('').reduce(function (a, c) { return a + c.charCodeAt(0) }, 0) % colors.length
-        avatar.style.background = colors[idx]
-        var words = provider.name.trim().split(/\s+/).filter(Boolean)
-        avatar.textContent = (words.length > 1 ? words[0][0] + words[words.length - 1][0] : (words[0] ? words[0][0] : '')).toUpperCase()
+        avatar.style.background = AVATAR_COLORS[avatarColorIndex(provider.name)].hex
+        avatar.textContent = initialsForName(provider.name)
       }
 
       // Info section

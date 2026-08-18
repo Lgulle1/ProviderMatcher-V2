@@ -69,6 +69,32 @@ export async function publishWidget(
   return { error: error?.message ?? null }
 }
 
+/**
+ * Uploads a widget's button icon image. Reuses the `provider-images` bucket
+ * rather than provisioning a new one — its RLS just requires the path's
+ * first folder to be the caller's org id, which `{orgId}/widget-{widgetId}.ext`
+ * satisfies the same way `{orgId}/{providerId}.ext` does for provider photos.
+ */
+export async function uploadWidgetIcon(
+  widgetId: string,
+  orgId: string,
+  file: File
+): Promise<{ url: string | null; error: string | null }> {
+  const extension = file.name.split('.').pop()?.toLowerCase() ?? 'jpg'
+  const path = `${orgId}/widget-${widgetId}.${extension}`
+
+  const { error: uploadError } = await supabase.storage
+    .from('provider-images')
+    .upload(path, file, { upsert: true })
+
+  if (uploadError) {
+    return { url: null, error: uploadError.message }
+  }
+
+  const { data: publicData } = supabase.storage.from('provider-images').getPublicUrl(path)
+  return { url: publicData.publicUrl, error: null }
+}
+
 export async function unpublishWidget(id: string): Promise<{ error: string | null }> {
   const { error } = await supabase
     .from('widgets')

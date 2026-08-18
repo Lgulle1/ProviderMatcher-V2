@@ -7,6 +7,7 @@ import EmptyState from '../../components/ui/EmptyState'
 import { useToast } from '../../components/ui/toastStore'
 import { getProviders, createProvider } from '../../lib/api/providers'
 import { supabase } from '../../lib/supabase'
+import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../shared/avatarPalette'
 import { useAuthStore } from '../../stores/authStore'
 import type { Category } from '../../types/database'
 
@@ -94,17 +95,6 @@ export default function ProvidersPage() {
     return map
   }, [categories])
 
-  const colors = [
-    'bg-indigo-500',
-    'bg-violet-500',
-    'bg-blue-500',
-    'bg-emerald-500',
-    'bg-amber-500',
-    'bg-rose-500',
-    'bg-pink-500',
-    'bg-cyan-500',
-  ]
-
   async function handleAddProvider() {
     if (!orgId) {
       setAddError('Organization not found')
@@ -184,12 +174,8 @@ export default function ProvidersPage() {
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filteredProviders.map((provider) => {
-            const words = provider.name.trim().split(/\s+/).filter(Boolean)
-            const first = words[0]?.[0] ?? ''
-            const last = words[words.length - 1]?.[0] ?? ''
-            const initials = (words.length > 1 ? `${first}${last}` : first).toUpperCase()
-            const idx =
-              provider.name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length
+            const initials = initialsForName(provider.name)
+            const avatarColor = AVATAR_COLORS[avatarColorIndex(provider.name)]
             const providerCategories = provider.category_ids
               .map((categoryId) => categoryNameById.get(categoryId))
               .filter((name): name is string => Boolean(name))
@@ -208,7 +194,7 @@ export default function ProvidersPage() {
                     />
                   ) : (
                     <div
-                      className={`flex h-20 w-20 items-center justify-center rounded-full text-xl font-bold text-white ${colors[idx]}`}
+                      className={`flex h-20 w-20 items-center justify-center rounded-full text-xl font-bold text-white ${avatarColor.tw}`}
                     >
                       {initials}
                     </div>

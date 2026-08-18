@@ -10,6 +10,7 @@ import { useToast } from '../../components/ui/toastStore'
 import {
   archiveProvider,
   getProvider,
+  removeProviderImage,
   updateProvider,
   uploadProviderImage,
 } from '../../lib/api/providers'
@@ -24,6 +25,7 @@ import {
   updateOffering,
 } from '../../lib/api/offerings'
 import { supabase } from '../../lib/supabase'
+import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../shared/avatarPalette'
 import { useAuthStore } from '../../stores/authStore'
 import type {
   CaseType,
@@ -297,24 +299,9 @@ export default function ProviderProfilePage() {
   const hasCategoryChanges = !sameIds(categoryIds, originalCategoryIds)
   const canSave = formState.isDirty || hasCategoryChanges || hasBookingLinkChanges || hasPhoneLinkChanges
 
-  const colors = [
-    'bg-indigo-500',
-    'bg-violet-500',
-    'bg-blue-500',
-    'bg-emerald-500',
-    'bg-amber-500',
-    'bg-rose-500',
-    'bg-pink-500',
-    'bg-cyan-500',
-  ]
-
   const providerName = provider?.name ?? ''
-  const words = providerName.trim().split(/\s+/).filter(Boolean)
-  const first = words[0]?.[0] ?? ''
-  const last = words[words.length - 1]?.[0] ?? ''
-  const initials = (words.length > 1 ? `${first}${last}` : first).toUpperCase()
-  const colorIdx =
-    providerName.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length
+  const initials = initialsForName(providerName)
+  const avatarColor = AVATAR_COLORS[avatarColorIndex(providerName)]
 
   async function onSubmit(values: ProviderFormValues) {
     if (!id) return
@@ -389,6 +376,25 @@ export default function ProviderProfilePage() {
     await queryClient.invalidateQueries({ queryKey: ['provider', id] })
     await queryClient.invalidateQueries({ queryKey: ['providers', orgId] })
     toast.success('Photo updated')
+  }
+
+  async function handleRemovePhoto() {
+    if (!id || !provider?.image_url) return
+    const confirmed = window.confirm('Remove this photo? The provider will show initials instead.')
+    if (!confirmed) return
+
+    setIsUploadingPhoto(true)
+    const result = await removeProviderImage(id, provider.image_url)
+    setIsUploadingPhoto(false)
+
+    if (result.error) {
+      toast.error(result.error)
+      return
+    }
+
+    await queryClient.invalidateQueries({ queryKey: ['provider', id] })
+    await queryClient.invalidateQueries({ queryKey: ['providers', orgId] })
+    toast.success('Photo removed')
   }
 
   async function handleArchive() {
@@ -503,7 +509,7 @@ export default function ProviderProfilePage() {
               />
             ) : (
               <div
-                className={`flex h-32 w-32 items-center justify-center rounded-full text-2xl font-bold text-white ${colors[colorIdx]}`}
+                className={`flex h-32 w-32 items-center justify-center rounded-full text-2xl font-bold text-white ${avatarColor.tw}`}
               >
                 {initials}
               </div>
@@ -517,6 +523,17 @@ export default function ProviderProfilePage() {
               <Upload className="h-4 w-4" />
               {isUploadingPhoto ? 'Uploading...' : 'Upload Photo'}
             </button>
+            {provider.image_url ? (
+              <button
+                type="button"
+                className="mt-1 flex items-center gap-1 text-sm text-red-600 underline"
+                onClick={() => void handleRemovePhoto()}
+                disabled={isUploadingPhoto}
+              >
+                <Trash2 className="h-4 w-4" />
+                Remove Photo
+              </button>
+            ) : null}
             <input
               ref={fileInputRef}
               type="file"
