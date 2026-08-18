@@ -247,7 +247,10 @@ export async function executeImportRun(params: ExecuteImportParams): Promise<Exe
       continue
     }
 
-    let providerId: string | null = null
+    // No initializer: every branch below assigns before this is read (the
+    // remaining case is `else { continue }`, which exits before it would
+    // be), so TS proves it's always assigned by the time it's used.
+    let providerId: string
     const isMerge = Boolean(conflict && resolution === 'merge')
 
     if (importedProviderNameToId[normalizedProvName]) {

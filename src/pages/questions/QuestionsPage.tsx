@@ -570,7 +570,9 @@ export default function QuestionsPage() {
     const constraint = addConstraintId ? constraints.find((c) => c.id === addConstraintId) : undefined
 
     let question_type: Question['question_type']
-    let constraint_id: string | null = null
+    // No initializer: the if/else-if/else below is exhaustive over addType
+    // and every branch assigns this before it's read.
+    let constraint_id: string | null
     let input_type: Question['input_type']
     let system_config: Record<string, unknown> = {}
 
