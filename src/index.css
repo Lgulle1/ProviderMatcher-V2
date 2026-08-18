@@ -1,3 +1,7 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+/* Keep scanning the same content this project always has under v3, rather
+   than trusting v4's automatic content detection to find the identical set
+   of files — lower risk than switching detection strategy in the same move
+   as the major-version bump itself. */
+@config "../tailwind.config.js";
