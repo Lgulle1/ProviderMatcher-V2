@@ -11,6 +11,22 @@ updates:
       # major still gets its own PR so a breaking change isn't buried in a batch.
       minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      # Evaluated and deliberately held back — re-propose only when something
+      # actually changes, not every week with no new information:
+      #   - typescript: 7.0 is a from-scratch Go-ported rewrite; typescript-eslint
+      #     explicitly refuses to run on it yet. Revisit once that support lands.
+      #   - @tanstack/react-table: v9 is a real API rewrite (useReactTable,
+      #     getCoreRowModel etc. are gone), not a drop-in bump. Revisit if/when
+      #     DataTablePage actually needs something v9-only.
+      #   - jsdom: v30 requires Node >=22.22, CI is pinned to Node 20/18. Revisit
+      #     alongside a deliberate Node-version bump, not bundled into this.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@tanstack/react-table"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "jsdom"
+        update-types: ["version-update:semver-major"]
 
   # Embeddable widget — separate package.json, separate blast radius (runs on
   # every embedding site's page, not just this app).
