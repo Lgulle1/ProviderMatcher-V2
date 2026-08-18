@@ -59,6 +59,17 @@ function typeBadgeClass(qt: Question['question_type']): string {
   }
 }
 
+// A handful of common symbols (☎ ✈ ✂ etc.) default to plain "text"
+// presentation — a colorless glyph that here would inherit the preview
+// button's white text color and become invisible. The emoji variation
+// selector (U+FE0F) forces color presentation; it's a no-op on characters
+// (like 👋) that already always render in color. Mirrors widget.js so the
+// preview matches what actually ships.
+const EMOJI_VARIATION_SELECTOR = '️'
+function withEmojiPresentation(value: string): string {
+  return value.endsWith(EMOJI_VARIATION_SELECTOR) ? value : `${value}${EMOJI_VARIATION_SELECTOR}`
+}
+
 function normalizeHex(v: string): string | null {
   const s = v.trim()
   if (/^#[0-9A-Fa-f]{6}$/.test(s)) {
@@ -982,7 +993,11 @@ export default function WidgetBuilderPage() {
                           type="text"
                           value={config.button_icon_value ?? (widget.button_icon_type === 'emoji' ? widget.button_icon_value ?? '' : '')}
                           onChange={(e) => setConfig((c) => ({ ...c, button_icon_value: e.target.value }))}
-                          maxLength={8}
+                          // maxLength counts UTF-16 code units, not emoji — a
+                          // family or skin-toned emoji is a multi-character ZWJ
+                          // sequence that needs well over 8 units. A low limit
+                          // here truncates mid-sequence and breaks it.
+                          maxLength={32}
                           className="mt-3 w-20 rounded-lg border border-slate-300 px-3 py-2 text-center text-lg"
                           placeholder="👋"
                         />
@@ -1262,13 +1277,13 @@ export default function WidgetBuilderPage() {
               >
                 {buttonIconType === 'emoji' && buttonIconValue ? (
                   <span aria-hidden className="text-lg leading-none">
-                    {buttonIconValue}
+                    {withEmojiPresentation(buttonIconValue)}
                   </span>
                 ) : null}
                 {buttonIconType === 'image' && buttonIconValue ? (
                   <img src={buttonIconValue} alt="" className="h-6 w-6 shrink-0 rounded-full object-cover" />
                 ) : null}
-                <span className="flex flex-col items-start leading-tight">
+                <span className="flex flex-col items-center text-center leading-tight">
                   <span>{buttonText}</span>
                   {buttonSubtext ? (
                     <span className="text-[11px] font-medium opacity-85">{buttonSubtext}</span>

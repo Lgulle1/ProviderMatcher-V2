@@ -201,7 +201,8 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
         var delaySeconds = config.open_delay_enabled ? Number(config.open_delay_seconds) || 0 : 0
         if (delaySeconds > 0) {
           var self = this
-          setTimeout(function () {
+          this._delayTimer = setTimeout(function () {
+            self._delayTimer = null
             // The shadow root only goes away if the host page removed us —
             // nothing in this widget ever does, but guard anyway since this
             // fires well after the initial render.
@@ -226,7 +227,7 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
           ';color:white;border:none;border-radius:50px;padding:12px 22px;font-size:15px;font-weight:600;cursor:pointer;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,0.2);text-align:left;}',
         '.pm-btn-icon{flex-shrink:0;display:flex;align-items:center;justify-content:center;width:26px;height:26px;font-size:18px;line-height:1;}',
         '.pm-btn-icon img{width:26px;height:26px;border-radius:50%;object-fit:cover;display:block;}',
-        '.pm-btn-text{display:flex;flex-direction:column;line-height:1.3;}',
+        '.pm-btn-text{display:flex;flex-direction:column;align-items:center;text-align:center;line-height:1.3;}',
         '.pm-btn-sub{font-size:11px;font-weight:500;opacity:0.85;margin-top:1px;}',
         '@keyframes pm-btn-enter{0%{opacity:0;transform:translateY(8px) scale(0.94);}100%{opacity:1;transform:translateY(0) scale(1);}}',
         '.pm-btn-enter{animation:pm-btn-enter 0.35s ease-out;}',
@@ -323,7 +324,14 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
         var iconEl = document.createElement('span')
         iconEl.className = 'pm-btn-icon'
         iconEl.setAttribute('aria-hidden', 'true')
-        iconEl.textContent = iconValue
+        // A handful of common symbols (☎ ✈ ✂ etc.) render in plain "text"
+        // style by default — a colorless glyph that inherits the button's
+        // white text color, effectively invisible on a colored button.
+        // Appending the emoji variation selector (U+FE0F) forces the color
+        // "emoji" presentation. It's a no-op for characters (like 👋) that
+        // already always render in color.
+        var VS16 = String.fromCharCode(0xfe0f)
+        iconEl.textContent = iconValue.slice(-1) === VS16 ? iconValue : iconValue + VS16
         btn.appendChild(iconEl)
       } else if (iconType === 'image' && iconValue) {
         var iconWrap = document.createElement('span')
@@ -1694,6 +1702,32 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
   widget.degraded = false
 
   /**
+   * Public API for opening the chat from an element elsewhere on the host
+   * page (e.g. a "Not sure who to see? Match me" link/button written into
+   * the site itself, outside this widget's own floating button). Wire such
+   * a trigger to `window._ProviderMatcher.open()` rather than clicking the
+   * floating button's DOM node directly — the button may not exist yet if
+   * open_delay_enabled is on, and clicking a node that isn't there yet is a
+   * silent no-op. This always opens immediately: it cancels any pending
+   * delay timer so the floating button doesn't also pop up afterward, and
+   * is a safe no-op if the chat is already open or the widget hasn't
+   * finished loading yet.
+   */
+  widget.open = function () {
+    if (!this.data || !this.shadow) return
+    if (this._delayTimer) {
+      clearTimeout(this._delayTimer)
+      this._delayTimer = null
+    }
+    if (this.shadow.getElementById('pm-chat')) return
+    var btn = this.shadow.querySelector('.pm-btn')
+    if (btn) btn.remove()
+    this.createChatContainer()
+    this.trackEvent('widget_opened')
+    this.startFlow()
+  }
+
+  /**
    * Replace the conversation area with the org's fallback so a patient who
    * hits a broken step still gets a way to reach the practice.
    */
@@ -1737,7 +1771,7 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
   // every flow method including ones added later.
   ;[
     'checkDomain', 'injectWidget', 'injectStyles', 'createFloatingButton',
-    'createChatContainer', 'resetState', 'addBubble', 'startFlow',
+    'createChatContainer', 'resetState', 'addBubble', 'startFlow', 'open',
     'getQuestionSequence', 'findConstraint', 'renderQuestion', 'renderCaseTypes',
     'renderLocationSelect', 'renderProviderChoice', 'renderBinary', 'renderRange',
     'renderExact', 'handleAnswer', 'goBack', 'showZeroResults', 'showResults',
