@@ -1,0 +1,29 @@
+version: 2
+updates:
+  # Root app (dashboard) — most exposure, weekly check.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      # Routine minor/patch bumps land as one PR instead of a dozen; anything
+      # major still gets its own PR so a breaking change isn't buried in a batch.
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  # Embeddable widget — separate package.json, separate blast radius (runs on
+  # every embedding site's page, not just this app).
+  - package-ecosystem: npm
+    directory: /widget
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

@@ -45,6 +45,39 @@ See `.env.example` for a template.
 
 SPA routing and security headers are configured in `vercel.json`.
 
+## Database migrations & edge functions (Supabase)
+
+Schema changes live in `supabase/migrations/*.sql` and are **not** applied automatically — pushing to `main` deploys the frontend (Vercel) and the widget (GitHub Pages), but the database and edge functions need their own explicit steps:
+
+```bash
+supabase db push
+supabase functions deploy <name> --project-ref wuhtfeptdrbdlmnxtumo
+```
+
+There is no staging database gate — these commands write directly to production. Run them deliberately, not as a reflex.
+
+### Migration filename gotcha
+
+A migration's version is **everything before the first underscore** in its filename, not the full name. `20260818_add_x.sql` and `20260818_revert_y.sql` both version as `20260818` — a silent collision where only one of them ever gets recorded as applied. If you're adding more than one migration on the same day, give each a distinct time suffix: `20260818090000_add_x.sql`, `20260818090100_revert_y.sql`.
+
+### If `db push` or `db pull` complains about migration history
+
+This means the remote database's migration-history table doesn't match your local files — usually because a migration was applied under a different filename/version than what's in git now (e.g. after a rename), or something was applied directly outside of a tracked migration. **Don't blindly follow the CLI's suggested `migration repair` commands** — they're a generic template and can be wrong about which side (local vs. remote) is the actual source of truth. Verify first:
+
+```bash
+# What does remote think is applied, and under what version/name?
+supabase db query --linked "select version, name from supabase_migrations.schema_migrations order by version desc limit 10"
+
+# Does the column/table a given migration should have added actually exist?
+supabase db query --linked "select column_name from information_schema.columns where table_schema='public' and table_name='<table>'"
+```
+
+Only after confirming what's *actually* on the database should you run `supabase migration repair --status applied|reverted <version>` — and only for the specific versions your query just confirmed, not the CLI's blanket suggestion.
+
+### Rollback
+
+Every migration file ends with a commented-out `ROLLBACK` block (manual application only — copy the commands out and run them yourself; nothing here is automatic). There's no down-migration tooling beyond that.
+
 ## Tenant isolation tests (staging only)
 
 Remote Supabase RLS tests live in `tests/tenant-isolation/`. They require a **staging** project and a local `.env.test.local` file (see `.env.test.example`).
