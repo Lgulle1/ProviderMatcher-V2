@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { Constraint } from '../../types/database'
 
 export type ConstraintFormSavePayload = Omit<Constraint, 'id' | 'created_at' | 'updated_at'>
@@ -145,10 +145,18 @@ export default function ConstraintModal({
 
   const isEdit = Boolean(initialData)
 
-  useEffect(() => {
-    if (!isOpen) {
-      return
-    }
+  // Reset the form when the modal opens (or switches which constraint it's
+  // editing) during render, rather than from an effect — an effect-based
+  // reset paints one stale frame of the previous constraint's data first.
+  // Track both the open transition and the id so this fires exactly when
+  // the old effect's [isOpen, initialData?.id] dependency array did.
+  const currentId = initialData?.id
+  const [synced, setSynced] = useState<{ isOpen: boolean; id: string | undefined }>({
+    isOpen: false,
+    id: undefined,
+  })
+  if (isOpen && (!synced.isOpen || synced.id !== currentId)) {
+    setSynced({ isOpen: true, id: currentId })
     setStep(1)
     setError('')
     setIsSaving(false)
@@ -159,7 +167,9 @@ export default function ConstraintModal({
       setType(null)
       setFormData(defaultForm())
     }
-  }, [isOpen, initialData?.id])
+  } else if (!isOpen && synced.isOpen) {
+    setSynced({ isOpen: false, id: currentId })
+  }
 
   if (!isOpen) {
     return null

@@ -59,6 +59,11 @@ const INITIAL_INLINE_CONSTRAINT = {
   max_allowed_value: '',
 }
 
+// Stable singleton, not a fresh `[]` literal each render — see
+// ProviderProfilePage's EMPTY_PROVIDER_LOCATIONS for why that distinction
+// matters when a default feeds a render-time state comparison.
+const EMPTY_CONFLICTS: ConflictItem[] = []
+
 const MAP_ROLE_OPTIONS: { value: ColumnRole; label: string }[] = [
   { value: '', label: '-- Select mapping --' },
   { value: 'provider_name', label: 'Provider Name' },
@@ -88,7 +93,6 @@ export default function ImportWizard({ isOpen, onClose, onComplete, orgId }: Imp
   const [orgCaseTypes, setOrgCaseTypes] = useState<CaseType[]>([])
   const [orgCategories, setOrgCategories] = useState<Category[]>([])
 
-  const [conflicts, setConflicts] = useState<ConflictItem[]>([])
   const [resolvedConflicts, setResolvedConflicts] = useState<Record<string, 'merge' | 'separate' | 'skip'>>({})
   const [isImporting, setIsImporting] = useState(false)
   const [importError, setImportError] = useState('')
@@ -111,39 +115,54 @@ export default function ImportWizard({ isOpen, onClose, onComplete, orgId }: Imp
   const [isSavingInline, setIsSavingInline] = useState(false)
   const [inlineError, setInlineError] = useState('')
 
+  // Reset all wizard state when it closes, during render rather than from
+  // an effect — an effect-based reset here paints one extra stale frame
+  // before clearing, and it's a synchronous setState-in-effect besides.
+  // Keeps the effect below focused on its one real job: fetching org data
+  // when the wizard opens.
+  const [wasOpen, setWasOpen] = useState(isOpen)
+  if (!isOpen && wasOpen) {
+    setWasOpen(false)
+    setStep(1)
+    setFile(null)
+    setParseResult(null)
+    setMappings([])
+    setParseLoading(false)
+    setInlineModal({ type: null, targetHeader: '' })
+    setInlineLocationForm({ name: '', address: '', phone: '' })
+    setInlineConstraintForm({ ...INITIAL_INLINE_CONSTRAINT })
+    setIsSavingInline(false)
+    setInlineError('')
+    setExistingProviders([])
+    setOrgCaseTypes([])
+    setOrgCategories([])
+    setResolvedConflicts({})
+    setIsImporting(false)
+    setImportError('')
+    setImportSuccess(false)
+    setImportStats({
+      providersCreated: 0,
+      providersUpdated: 0,
+      offeringsUpserted: 0,
+      newCaseTypes: 0,
+      newCategories: 0,
+    })
+    setMappingTemplateBanner(false)
+  } else if (isOpen && !wasOpen) {
+    setWasOpen(true)
+  }
+
+  // Refs can't be mutated during render (unlike state, a ref write survives
+  // a discarded/replayed render), so this one small piece of the close-reset
+  // stays in an effect.
   useEffect(() => {
     if (!isOpen) {
-      setStep(1)
-      setFile(null)
-      setParseResult(null)
-      setMappings([])
-      setParseLoading(false)
-      setInlineModal({ type: null, targetHeader: '' })
-      setInlineLocationForm({ name: '', address: '', phone: '' })
-      setInlineConstraintForm({ ...INITIAL_INLINE_CONSTRAINT })
-      setIsSavingInline(false)
-      setInlineError('')
-      setExistingProviders([])
-      setOrgCaseTypes([])
-      setOrgCategories([])
-      setConflicts([])
-      setResolvedConflicts({})
-      setIsImporting(false)
-      setImportError('')
-      setImportSuccess(false)
-      setImportStats({
-        providersCreated: 0,
-        providersUpdated: 0,
-        offeringsUpserted: 0,
-        newCaseTypes: 0,
-        newCategories: 0,
-      })
-      setMappingTemplateBanner(false)
       templateAppliedRef.current = false
-      return
     }
+  }, [isOpen])
 
-    if (!orgId) {
+  useEffect(() => {
+    if (!isOpen || !orgId) {
       return
     }
 
@@ -294,26 +313,32 @@ export default function ImportWizard({ isOpen, onClose, onComplete, orgId }: Imp
     }
   }, [step, parseResult, orgId])
 
-  useEffect(() => {
+  // Pure derivation of already-available data — no external system involved,
+  // so this is a useMemo rather than an effect writing to state.
+  const conflicts = useMemo(() => {
     if (step !== 3 || !parseResult?.rows.length) {
-      return
+      return EMPTY_CONFLICTS
     }
     const providerHeader = mappings.find((m) => m.role === 'provider_name')?.excelHeader
     if (!providerHeader) {
-      setConflicts([])
-      return
+      return EMPTY_CONFLICTS
     }
-    setConflicts(detectConflicts(parseResult.rows, providerHeader, existingProviders))
-  }, [step, parseResult?.rows, mappings, existingProviders, parseResult])
+    return detectConflicts(parseResult.rows, providerHeader, existingProviders)
+  }, [step, parseResult, mappings, existingProviders])
 
   const conflictSignature = useMemo(
     () => conflicts.map((c) => `${c.rowIndex}-${c.existingProvider.id}-${c.matchType}`).join('|'),
     [conflicts]
   )
 
-  useEffect(() => {
+  // resolvedConflicts tracks per-row resolutions for the current conflict
+  // set — reset it during render when that set changes, rather than from
+  // an effect reacting to a value that render-time logic already produced.
+  const [syncedConflictSignature, setSyncedConflictSignature] = useState(conflictSignature)
+  if (conflictSignature !== syncedConflictSignature) {
+    setSyncedConflictSignature(conflictSignature)
     setResolvedConflicts({})
-  }, [conflictSignature])
+  }
 
   const step3CanContinue = useMemo(() => {
     if (conflicts.length === 0) {

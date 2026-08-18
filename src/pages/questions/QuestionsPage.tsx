@@ -339,61 +339,74 @@ export default function QuestionsPage() {
     }
   }, [orgId, queryClient])
 
-  useEffect(() => {
-    if (modal.type !== 'add') {
-      return
+  // Reset the add form when the modal switches into 'add', during render
+  // rather than from an effect — matches the [modal.type] dependency of the
+  // effect this replaces: fires exactly when modal.type changes.
+  const [syncedAddModalType, setSyncedAddModalType] = useState(modal.type)
+  if (modal.type !== syncedAddModalType) {
+    setSyncedAddModalType(modal.type)
+    if (modal.type === 'add') {
+      setAddStep(1)
+      setAddType(null)
+      setAddConstraintId(null)
+      setAddFormData({
+        question_text: '',
+        subtext: '',
+        required: true,
+        input_type: 'buttons',
+      })
+      setAddLocationFilter('all')
+      setAddLocationIds([])
+      setAddIsSaving(false)
+      setAddError('')
     }
-    setAddStep(1)
-    setAddType(null)
-    setAddConstraintId(null)
-    setAddFormData({
-      question_text: '',
-      subtext: '',
-      required: true,
-      input_type: 'buttons',
-    })
-    setAddLocationFilter('all')
-    setAddLocationIds([])
-    setAddIsSaving(false)
-    setAddError('')
-  }, [modal.type])
+  }
 
-  useEffect(() => {
-    if (modal.type !== 'edit' || !modal.payload) {
-      return
-    }
-    const q = modal.payload as Question
-    setEditIsSaving(false)
-    setAddError('')
-    if (q.question_type === 'entry') {
-      setEntryEditForm({ question_text: q.question_text, input_type: q.input_type })
-      return
-    }
-    setAddStep(1)
-    if (q.question_type === 'clinical' || q.question_type === 'location' || q.question_type === 'provider') {
-      setAddType(q.question_type)
-    }
-    setAddConstraintId(q.constraint_id)
-    setAddFormData({
-      question_text: q.question_text,
-      subtext: q.subtext ?? '',
-      required: q.required,
-      input_type: q.input_type === 'number' ? 'number' : q.input_type === 'dropdown' ? 'dropdown' : 'buttons',
-    })
-    const sc = (q.system_config ?? {}) as Record<string, unknown>
-    if (q.question_type === 'location') {
-      const lf = sc.locationFilter as string | undefined
-      const scp = sc.scope as string | undefined
-      const ids = ((sc.location_ids as string[]) ?? (sc.locationIds as string[]) ?? []) as string[]
-      if (lf === 'specific' || scp === 'specific') {
-        setAddLocationFilter('specific')
-        setAddLocationIds(Array.isArray(ids) ? ids : [])
+  // Populate the edit form when the modal switches into 'edit' (or the
+  // question being edited changes), during render rather than from an
+  // effect. modal.payload is real useState, not a query-fallback default,
+  // so it's referentially stable across renders when unchanged — safe to
+  // compare directly.
+  const [syncedEditModal, setSyncedEditModal] = useState<{ type: typeof modal.type; payload: unknown }>({
+    type: modal.type,
+    payload: modal.payload,
+  })
+  if (modal.type !== syncedEditModal.type || modal.payload !== syncedEditModal.payload) {
+    setSyncedEditModal({ type: modal.type, payload: modal.payload })
+    if (modal.type === 'edit' && modal.payload) {
+      const q = modal.payload as Question
+      setEditIsSaving(false)
+      setAddError('')
+      if (q.question_type === 'entry') {
+        setEntryEditForm({ question_text: q.question_text, input_type: q.input_type })
       } else {
-        setAddLocationFilter('all')
-        setAddLocationIds([])
+        setAddStep(1)
+        if (q.question_type === 'clinical' || q.question_type === 'location' || q.question_type === 'provider') {
+          setAddType(q.question_type)
+        }
+        setAddConstraintId(q.constraint_id)
+        setAddFormData({
+          question_text: q.question_text,
+          subtext: q.subtext ?? '',
+          required: q.required,
+          input_type: q.input_type === 'number' ? 'number' : q.input_type === 'dropdown' ? 'dropdown' : 'buttons',
+        })
+        const sc = (q.system_config ?? {}) as Record<string, unknown>
+        if (q.question_type === 'location') {
+          const lf = sc.locationFilter as string | undefined
+          const scp = sc.scope as string | undefined
+          const ids = ((sc.location_ids as string[]) ?? (sc.locationIds as string[]) ?? []) as string[]
+          if (lf === 'specific' || scp === 'specific') {
+            setAddLocationFilter('specific')
+            setAddLocationIds(Array.isArray(ids) ? ids : [])
+          } else {
+            setAddLocationFilter('all')
+            setAddLocationIds([])
+          }
+        }
       }
     }
-  }, [modal.type, modal.payload])
+  }
 
   const entryQuestion = useMemo(() => {
     const entries = allQuestions.filter((q) => q.question_type === 'entry')
@@ -409,9 +422,14 @@ export default function QuestionsPage() {
       .sort((a, b) => a.order_rank - b.order_rank)
   }, [allQuestions])
 
-  useEffect(() => {
+  // `items` is the drag-reorderable copy of nonEntryFromServer. Resync it
+  // during render when the query returns new data, rather than from an
+  // effect, to avoid painting one stale frame after every refetch.
+  const [syncedItems, setSyncedItems] = useState(nonEntryFromServer)
+  if (nonEntryFromServer !== syncedItems) {
+    setSyncedItems(nonEntryFromServer)
     setItems(nonEntryFromServer)
-  }, [nonEntryFromServer])
+  }
 
   const constraintMap = useMemo(() => {
     const m = new Map<string, string>()
