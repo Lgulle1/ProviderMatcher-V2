@@ -6,6 +6,6 @@
     "build:prod": "NODE_ENV=production node build.js"
   },
   "devDependencies": {
-    "esbuild": "^0.20.0"
+    "esbuild": "^0.28.2"
   }
 }
