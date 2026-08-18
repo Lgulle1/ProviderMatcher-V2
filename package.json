@@ -31,7 +31,7 @@
     "react-dom": "^19.2.4",
     "react-hook-form": "^7.72.1",
     "react-router-dom": "^7.14.0",
-    "xlsx": "^0.18.5",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-latest/xlsx-latest.tgz",
     "zod": "^4.3.6",
     "zustand": "^5.0.12"
   },

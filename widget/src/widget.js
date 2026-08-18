@@ -364,27 +364,47 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
     createChatContainer: function () {
       var self = this
       var config = this.data.config || {}
+      var isFloating = config.embed_mode !== 'inline'
       var chat = document.createElement('div')
       chat.className = 'pm-chat'
       chat.id = 'pm-chat'
+      if (isFloating) {
+        // A floating panel over page content is a dialog, not part of the
+        // page's normal reading order — say so, so a screen reader announces
+        // it as one instead of silently dropping the user into the middle
+        // of unrelated page content.
+        chat.setAttribute('role', 'dialog')
+        chat.setAttribute('aria-modal', 'true')
+        chat.setAttribute('aria-label', config.greeting_text || 'Find a Provider')
+        chat.tabIndex = -1
+      }
       var header = document.createElement('div')
       header.className = 'pm-header'
       var title = document.createElement('span')
       title.textContent = config.greeting_text || 'Find a Provider'
       header.appendChild(title)
-      if (config.embed_mode !== 'inline') {
+      function closeChat() {
+        self.trackEvent('widget_closed')
+        chat.remove()
+        self.resetState()
+        document.body.style.overflow = ''
+        self.shadow.host.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:2147483647;'
+        var newBtn = self.createFloatingButton()
+        // Keyboard/screen-reader users need focus to land somewhere sensible,
+        // not silently fall back to <body> because the focused element (the
+        // close button, or the panel itself) was just removed from the DOM.
+        if (newBtn) newBtn.focus()
+      }
+      if (isFloating) {
         var closeBtn = document.createElement('button')
         closeBtn.className = 'pm-close'
         closeBtn.innerHTML = '&times;'
-        closeBtn.onclick = function () {
-          self.trackEvent('widget_closed')
-          chat.remove()
-          self.resetState()
-          document.body.style.overflow = '';
-          self.shadow.host.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:2147483647;';
-          self.createFloatingButton()
-        }
+        closeBtn.setAttribute('aria-label', 'Close')
+        closeBtn.onclick = closeChat
         header.appendChild(closeBtn)
+        chat.addEventListener('keydown', function (e) {
+          if (e.key === 'Escape') closeChat()
+        })
       }
       var body = document.createElement('div')
       body.className = 'pm-body'
@@ -393,6 +413,7 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
       chat.appendChild(body)
       this.shadow.appendChild(chat)
       document.body.style.overflow = 'hidden';
+      if (isFloating) chat.focus()
       var self = this;
       var mq = window.matchMedia('(max-width:480px)');
       function applyHostLayout() {
@@ -597,6 +618,7 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
       wrap.className = 'pm-field-col'
       var sel = document.createElement('select')
       sel.className = 'pm-select'
+      sel.setAttribute('aria-label', q.question_text || 'Select a location')
       sel.innerHTML = '<option value="">Select a location...</option>'
       var noPreferenceOpt = document.createElement('option')
       noPreferenceOpt.value = 'no-preference'
@@ -686,6 +708,10 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
       inp.min = constraint.min_allowed_value || 0
       inp.max = constraint.max_allowed_value || 999
       inp.placeholder = 'Enter number'
+      // Placeholder text disappears on input and isn't a reliable accessible
+      // name — the question itself (already shown as a chat bubble above)
+      // is the real label for a screen reader.
+      inp.setAttribute('aria-label', q.question_text || 'Enter number')
       var btn = document.createElement('button')
       btn.className = 'pm-next-btn'
       btn.textContent = 'Next'
@@ -712,6 +738,7 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
           inp.type = 'text'
           inp.className = 'pm-number-input'
           inp.placeholder = 'Answer'
+          inp.setAttribute('aria-label', q.question_text || 'Answer')
           var btn = document.createElement('button')
           btn.className = 'pm-next-btn'
           btn.textContent = 'Next'
@@ -726,6 +753,7 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
         } else {
           var sel = document.createElement('select')
           sel.className = 'pm-select'
+          sel.setAttribute('aria-label', q.question_text || 'Select an answer')
           sel.innerHTML = '<option value="">Select...</option>'
           values.forEach(function (v) {
             var opt = document.createElement('option')
@@ -758,6 +786,7 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
           inp2.type = 'text'
           inp2.className = 'pm-number-input'
           inp2.placeholder = 'Answer'
+          inp2.setAttribute('aria-label', q.question_text || 'Answer')
           var btn3 = document.createElement('button')
           btn3.className = 'pm-next-btn'
           btn3.textContent = 'Next'
@@ -1052,6 +1081,7 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
         var search = document.createElement('input')
         search.className = 'pm-search'
         search.placeholder = 'Search by provider name...'
+        search.setAttribute('aria-label', 'Search by provider name')
         search.oninput = function () {
           var q = search.value.toLowerCase()
           results.querySelectorAll('.pm-card').forEach(function (card) {
