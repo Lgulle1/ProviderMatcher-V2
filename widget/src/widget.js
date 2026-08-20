@@ -208,7 +208,23 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
             // fires well after the initial render.
             if (!self.shadow) return
             var btn = self.createFloatingButton()
-            if (btn) btn.classList.add('pm-btn-enter')
+            if (btn) {
+              btn.classList.add('pm-btn-enter')
+              // pm-btn-enter and the hover animations both set the CSS
+              // `animation` shorthand on the same element. Left in place
+              // forever, unhovering would fall back to this rule (since
+              // :hover stops matching) and replay the fade-in-from-invisible
+              // entrance on every single unhover. Drop the class once its
+              // one-shot animation is actually done — on natural completion
+              // (animationend) or if a hover interrupts it early
+              // (animationcancel) — so nothing is left to compete with hover
+              // afterward.
+              var clearEnter = function () {
+                btn.classList.remove('pm-btn-enter')
+              }
+              btn.addEventListener('animationend', clearEnter, { once: true })
+              btn.addEventListener('animationcancel', clearEnter, { once: true })
+            }
           }, delaySeconds * 1000)
         } else {
           this.createFloatingButton()
