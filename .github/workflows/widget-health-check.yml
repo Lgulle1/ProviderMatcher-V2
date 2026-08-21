@@ -1,0 +1,27 @@
+name: Widget Health Check
+
+# Catches drift between the deployed widget.js (GitHub Pages) and the
+# deployed track-session/widget-data edge functions (Supabase) -- the two
+# ship independently, so nothing else guarantees they still agree.
+#
+# Runs every morning, and also right after anything merges to main so a
+# breaking deploy is caught within minutes instead of the next morning.
+on:
+  schedule:
+    - cron: '0 12 * * *' # 12:00 UTC daily (~7-8am US Eastern)
+  push:
+    branches: [main]
+  workflow_dispatch: {} # lets you run it on demand from the Actions tab
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+
+      - name: Run widget/edge-function contract checks
+        run: node scripts/widget-health-check.mjs
