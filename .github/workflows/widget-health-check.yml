@@ -1,8 +1,9 @@
 name: Widget Health Check
 
-# Catches drift between the deployed widget.js (GitHub Pages) and the
-# deployed track-session/widget-data edge functions (Supabase) -- the two
-# ship independently, so nothing else guarantees they still agree.
+# Catches breaks across the whole chain: towsonortho.com being reachable,
+# the deployed widget.js (GitHub Pages), and the track-session/widget-data
+# edge functions (Supabase) it calls -- these all ship independently, so
+# nothing else guarantees any of them still agree with each other.
 #
 # Runs every morning, and also right after anything merges to main so a
 # breaking deploy is caught within minutes instead of the next morning.
