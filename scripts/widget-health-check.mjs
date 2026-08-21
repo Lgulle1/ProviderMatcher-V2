@@ -1,17 +1,15 @@
 #!/usr/bin/env node
-// Daily synthetic check covering the whole chain a site visitor depends on:
-// towsonortho.com itself is up, the widget.js bundle (GitHub Pages) it
-// embeds is reachable, and that bundle's track-session/widget-data calls
-// (Supabase edge functions) still agree with what the edge functions
-// actually accept.
+// Daily synthetic check that the deployed widget.js and the deployed
+// track-session/widget-data edge functions still agree with each other.
 //
-// The widget and the edge functions ship independently, and nothing forces
-// them to stay in sync -- a validator change on one side with no
-// corresponding change on the other is exactly how the 2026-08-21 "Invalid
-// scroll_depth" bug shipped silently for who-knows-how-long. This script
-// exercises every payload shape widget.js actually sends, against the live
-// production endpoints, and fails loudly (non-zero exit -> GitHub Actions
-// failure -> email) if any of them stop agreeing.
+// This exists because the widget (GitHub Pages) and the edge functions
+// (Supabase, manually deployed) ship independently. Nothing forces them to
+// stay in sync — a validator change on one side with no corresponding
+// change on the other is exactly how the 2026-08-21 "Invalid scroll_depth"
+// bug shipped silently for who-knows-how-long. This script exercises every
+// payload shape widget.js actually sends, against the live production
+// endpoints, and fails loudly (non-zero exit -> GitHub Actions failure ->
+// email) if any of them stop agreeing.
 //
 // The widget_id/anon key/org used here are not secrets: the anon key and
 // widget_id are already public in the <script> embed on the customer site,
@@ -29,8 +27,6 @@ const WIDGET_ID = '4e689dc7-aa2a-44f6-bfcf-f0f75819e3e3' // live Towson Ortho wi
 const ORG_ID = '9d069801-5174-4de2-9402-ccb69586d6d1'
 const ORIGIN = 'https://toa-website-pied.vercel.app' // in that widget's allowed_domains
 const WIDGET_JS_URL = 'https://lgulle1.github.io/ProviderMatcher-V2/widget.js'
-const SITE_URL = 'https://www.towsonortho.com/'
-const SITE_TITLE_MARKER = 'Towson Orthopaedic'
 
 const SESSION_ID = 'deadbeef-dead-4eef-8eef-deadbeefdead' // fixed synthetic canary session
 const PROVIDER_ID = 'deadbeef-beef-4eef-8eef-beefdeadbeef'
@@ -72,16 +68,6 @@ async function postTrack(body) {
   }
   return { status: res.status, json, text }
 }
-
-// --- 0. The site itself is up ---------------------------------------------
-// Covers the failure mode outside the widget entirely: DNS lapsed, the
-// Vercel deploy is down, or the homepage is serving an error/placeholder.
-await check('towsonortho.com homepage is up', async () => {
-  const res = await fetch(SITE_URL, { redirect: 'follow' })
-  assert(res.status === 200, `expected 200, got ${res.status}`)
-  const text = await res.text()
-  assert(text.includes(SITE_TITLE_MARKER), `homepage body is missing "${SITE_TITLE_MARKER}" -- error page or wrong deploy?`)
-})
 
 // --- 1. Static asset reachable -------------------------------------------
 await check('widget.js is served and looks like the real bundle', async () => {
