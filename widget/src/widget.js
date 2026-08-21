@@ -3,6 +3,19 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
 ;(function () {
   'use strict'
 
+  // Guard against the embed snippet appearing more than once on the same
+  // page (a common copy/paste mistake in CMS/theme builders — e.g. once in
+  // a global header/footer include and again in a page-specific block).
+  // Each <script src="...widget.js"> tag on the page executes this whole
+  // IIFE independently, so without this guard a second copy runs
+  // injectWidget() again and mounts a second, fully-independent floating
+  // button + shadow-DOM widget on top of the first — both pinned to the
+  // same bottom:24px;right:24px corner at max z-index, so whichever one
+  // renders/updates last visually pops in on top of the other (including
+  // on top of an already-open chat modal from the first instance).
+  if (window.__pmWidgetBooted) return
+  window.__pmWidgetBooted = true
+
   var supabaseBaseUrl =
     typeof SUPABASE_URL !== 'undefined' ? SUPABASE_URL : ''
 
@@ -183,6 +196,12 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
     },
 
     injectWidget: function () {
+      // Belt-and-suspenders: the top-of-file __pmWidgetBooted guard should
+      // already prevent a second instance, but if it's ever bypassed (e.g.
+      // two different data-widget-id snippets on the same page), refuse to
+      // mount a second #pm-widget-host rather than stacking two independent
+      // widgets in the same fixed bottom-right corner.
+      if (document.getElementById('pm-widget-host')) return
       var config = this.data.config || {}
       var host = document.createElement('div')
       host.setAttribute('id', 'pm-widget-host')
@@ -207,6 +226,12 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
             // nothing in this widget ever does, but guard anyway since this
             // fires well after the initial render.
             if (!self.shadow) return
+            // A host-page trigger may have opened the chat directly while
+            // this timer was still pending — e.g. by reimplementing the
+            // open flow instead of calling the public open() API (which
+            // cancels this timer). Don't pop the floating button in on top
+            // of a chat panel that's already open.
+            if (self.shadow.getElementById('pm-chat')) return
             var btn = self.createFloatingButton()
             if (btn) {
               btn.classList.add('pm-btn-enter')
