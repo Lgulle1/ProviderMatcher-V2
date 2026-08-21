@@ -17,6 +17,23 @@ import {
 const ALLOW_HEADERS = 'Content-Type, apikey, Authorization'
 
 /**
+ * The widget reports scroll depth as an engagement summary object, e.g.
+ * {"max_position_seen":3,"time_in_results_ms":8500} — not a raw percentage.
+ * Reshaped rather than stored as sent, so a forged payload can't smuggle
+ * arbitrary fields into the analytics jsonb.
+ */
+function boundedScrollDepth(
+  value: unknown,
+): { max_position_seen: number; time_in_results_ms: number } | null {
+  if (!value || typeof value !== 'object') return null
+  const v = value as Record<string, unknown>
+  const maxPositionSeen = boundedInt(v.max_position_seen, 0, 10_000)
+  const timeInResultsMs = boundedInt(v.time_in_results_ms, 0, 24 * 60 * 60 * 1000)
+  if (maxPositionSeen === null || timeInResultsMs === null) return null
+  return { max_position_seen: maxPositionSeen, time_in_results_ms: timeInResultsMs }
+}
+
+/**
  * This endpoint is unauthenticated by necessity — it is called by anonymous
  * visitors on a customer's site — but it writes with the service role key, so
  * every request is gated before it reaches the database:
@@ -127,7 +144,7 @@ serve(async (req) => {
     }
 
     if (body.type === 'scroll') {
-      const depth = boundedInt(body.scroll_depth, 0, 100)
+      const depth = boundedScrollDepth(body.scroll_depth)
       if (depth === null) return json({ error: 'Invalid scroll_depth' }, 400)
       const row = await currentSession('id')
       if (row) {
@@ -179,7 +196,7 @@ serve(async (req) => {
             })
             .filter((e) => e.provider_id !== null)
         : [],
-      scroll_depth: boundedInt(body.scroll_depth, 0, 100),
+      scroll_depth: boundedScrollDepth(body.scroll_depth),
     }
 
     // Scope the upsert lookup by widget too, so a session id can only ever
