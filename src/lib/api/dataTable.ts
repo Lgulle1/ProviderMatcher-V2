@@ -1,4 +1,5 @@
 import { supabase } from '../supabase'
+import { selectAllRows } from './paginate'
 import type { Offering, Provider } from '../../types/database'
 
 /**
@@ -14,17 +15,19 @@ export interface DataTableOffering extends Offering {
 }
 
 export async function getDataTableOfferings(orgId: string): Promise<DataTableOffering[]> {
-  const { data, error } = await supabase
-    .from('offerings')
-    .select('*, providers(id, name, category_ids, image_url)')
-    .eq('org_id', orgId)
-    .eq('is_archived', false)
+  // Paged: this backs the whole data table, so truncating at PostgREST's row
+  // cap would hide offerings from the admin entirely rather than merely
+  // shortening a list.
+  const rows = await selectAllRows<DataTableOffering>((from, to) =>
+    supabase
+      .from('offerings')
+      .select('*, providers(id, name, category_ids, image_url)')
+      .eq('org_id', orgId)
+      .eq('is_archived', false)
+      .range(from, to),
+  )
 
-  if (error || !data) {
-    return []
-  }
-
-  return data
+  return rows ?? []
 }
 
 export async function updateOfferingLocationIds(

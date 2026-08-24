@@ -56,17 +56,22 @@ export async function archiveLocation(id: string, orgId: string): Promise<{ erro
     return { error: deletePlError.message }
   }
 
-  const { data: offerings, error: fetchError } = await supabase
-    .from('offerings')
-    .select('id, location_ids')
-    .eq('org_id', orgId)
-    .contains('location_ids', [id])
+  // Paged: a partial read would leave the archived location still referenced
+  // on every offering past the first page.
+  const offerings = await selectAllRows<{ id: string; location_ids: string[] }>((from, to) =>
+    supabase
+      .from('offerings')
+      .select('id, location_ids')
+      .eq('org_id', orgId)
+      .contains('location_ids', [id])
+      .range(from, to),
+  )
 
-  if (fetchError) {
-    return { error: fetchError.message }
+  if (!offerings) {
+    return { error: 'Failed to load offerings for this location' }
   }
 
-  const toUpdate = offerings ?? []
+  const toUpdate = offerings
 
   for (const row of toUpdate) {
     const next = ((row.location_ids as string[]) ?? []).filter((lid) => lid !== id)
