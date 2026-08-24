@@ -316,7 +316,11 @@ export default function ImportWizard({ isOpen, onClose, onComplete, orgId }: Imp
   // Pure derivation of already-available data — no external system involved,
   // so this is a useMemo rather than an effect writing to state.
   const conflicts = useMemo(() => {
-    if (step !== 3 || !parseResult?.rows.length) {
+    // From step 3 onward, not step 3 only: the preview (4) and the import
+    // itself (5) both read this. Scoping it to step 3 silently emptied it the
+    // moment the user advanced, so every resolution they had just made was
+    // discarded and each conflicting row was imported as a new provider.
+    if (step < 3 || !parseResult?.rows.length) {
       return EMPTY_CONFLICTS
     }
     const providerHeader = mappings.find((m) => m.role === 'provider_name')?.excelHeader
