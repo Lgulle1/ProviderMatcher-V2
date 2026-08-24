@@ -21,7 +21,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Run widget/edge-function contract checks
         run: node scripts/widget-health-check.mjs
