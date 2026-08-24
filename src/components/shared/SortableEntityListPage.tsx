@@ -47,7 +47,8 @@ export type SortableEntity = {
 /** The API surface a page must provide. Mirrors the existing per-entity modules. */
 export type SortableEntityApi<T extends SortableEntity> = {
   list: (orgId: string) => Promise<T[]>
-  offeringCount: (id: string) => Promise<number>
+  /** Counts for the whole list at once -- see the per-entity API modules. */
+  offeringCounts: (ids: string[]) => Promise<Record<string, number>>
   create: (orgId: string, name: string) => Promise<{ error: string | null }>
   update: (id: string, name: string) => Promise<{ error: string | null }>
   updateOrders: (
@@ -190,10 +191,10 @@ export default function SortableEntityListPage<T extends SortableEntity>({
     queryKey: [queryKey, orgId],
     queryFn: async () => {
       const entities = await api.list(orgId)
-      const counts = await Promise.all(entities.map((e) => api.offeringCount(e.id)))
-      return entities.map((entity, i) => ({
+      const counts = await api.offeringCounts(entities.map((e) => e.id))
+      return entities.map((entity) => ({
         entity,
-        offeringCount: counts[i],
+        offeringCount: counts[entity.id] ?? 0,
       }))
     },
     enabled: Boolean(orgId),

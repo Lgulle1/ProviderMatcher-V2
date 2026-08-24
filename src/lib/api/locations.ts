@@ -1,5 +1,6 @@
 import { supabase } from '../supabase'
 import type { Location } from '../../types/database'
+import { selectAllRows } from './paginate'
 
 export async function getLocations(orgId: string): Promise<Location[]> {
   const { data, error } = await supabase
@@ -92,4 +93,45 @@ export async function getLocationOfferingCount(locationId: string): Promise<numb
   }
 
   return count ?? 0
+}
+
+/**
+ * Offering counts for many locations in one pass.
+ *
+ * Replaces calling getLocationOfferingCount() per row, which issued one request
+ * per location on every load of the locations list.
+ */
+export async function getLocationOfferingCounts(
+  locationIds: string[],
+): Promise<Record<string, number>> {
+  const counts: Record<string, number> = {}
+  for (const id of locationIds) {
+    counts[id] = 0
+  }
+  if (locationIds.length === 0) {
+    return counts
+  }
+
+  const rows = await selectAllRows<{ location_ids: string[] | null }>((from, to) =>
+    supabase
+      .from('offerings')
+      .select('location_ids')
+      .eq('is_archived', false)
+      .overlaps('location_ids', locationIds)
+      .range(from, to),
+  )
+  if (!rows) {
+    return counts
+  }
+
+  for (const row of rows) {
+    // Deduped: a location listed twice on one offering must not count twice.
+    for (const locationId of new Set(row.location_ids ?? [])) {
+      if (locationId in counts) {
+        counts[locationId] += 1
+      }
+    }
+  }
+
+  return counts
 }

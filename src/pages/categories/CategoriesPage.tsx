@@ -4,7 +4,7 @@ import {
   archiveCategory,
   createCategory,
   getCategories,
-  getCategoryOfferingCount,
+  getCategoryOfferingCounts,
   updateCategory,
   updateCategoryOrders,
 } from '../../lib/api/categories'
@@ -20,7 +20,7 @@ export default function CategoriesPage() {
       alsoInvalidate={['categories']}
       api={{
         list: getCategories,
-        offeringCount: getCategoryOfferingCount,
+        offeringCounts: getCategoryOfferingCounts,
         create: createCategory,
         update: updateCategory,
         updateOrders: updateCategoryOrders,

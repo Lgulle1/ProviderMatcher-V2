@@ -1,5 +1,6 @@
 import { supabase } from '../supabase'
 import type { Category } from '../../types/database'
+import { selectAllRows } from './paginate'
 
 export async function getCategories(orgId: string): Promise<Category[]> {
   const { data, error } = await supabase
@@ -96,4 +97,72 @@ export async function getCategoryOfferingCount(categoryId: string): Promise<numb
   }
 
   return count ?? 0
+}
+
+/**
+ * Offering counts for many categories in one pass.
+ *
+ * Replaces calling getCategoryOfferingCount() per row, which issued *two*
+ * requests per category (providers, then their offerings) — 50 categories meant
+ * 100 requests on every load. Two paged reads now cover the whole list.
+ */
+export async function getCategoryOfferingCounts(
+  categoryIds: string[],
+): Promise<Record<string, number>> {
+  const counts: Record<string, number> = {}
+  for (const id of categoryIds) {
+    counts[id] = 0
+  }
+  if (categoryIds.length === 0) {
+    return counts
+  }
+
+  const providers = await selectAllRows<{ id: string; category_ids: string[] | null }>((from, to) =>
+    supabase
+      .from('providers')
+      .select('id, category_ids')
+      .eq('is_archived', false)
+      .overlaps('category_ids', categoryIds)
+      .range(from, to),
+  )
+  if (!providers?.length) {
+    return counts
+  }
+
+  const offerings = await selectAllRows<{ provider_id: string | null }>((from, to) =>
+    supabase
+      .from('offerings')
+      .select('provider_id')
+      .eq('is_archived', false)
+      .in(
+        'provider_id',
+        providers.map((p) => p.id),
+      )
+      .range(from, to),
+  )
+  if (!offerings) {
+    return counts
+  }
+
+  const offeringsByProvider = new Map<string, number>()
+  for (const row of offerings) {
+    if (row.provider_id != null) {
+      offeringsByProvider.set(row.provider_id, (offeringsByProvider.get(row.provider_id) ?? 0) + 1)
+    }
+  }
+
+  for (const provider of providers) {
+    const offeringCount = offeringsByProvider.get(provider.id) ?? 0
+    if (offeringCount === 0) {
+      continue
+    }
+    // Deduped: a category listed twice on one provider must not count twice.
+    for (const categoryId of new Set(provider.category_ids ?? [])) {
+      if (categoryId in counts) {
+        counts[categoryId] += offeringCount
+      }
+    }
+  }
+
+  return counts
 }

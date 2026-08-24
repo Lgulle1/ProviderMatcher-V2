@@ -7,7 +7,7 @@ import { useToast } from '../../components/ui/toastStore'
 import {
   archiveLocation,
   createLocation,
-  getLocationOfferingCount,
+  getLocationOfferingCounts,
   getLocations,
   updateLocation,
 } from '../../lib/api/locations'
@@ -42,13 +42,16 @@ export default function LocationsPage() {
   const [archiveLoading, setArchiveLoading] = useState(false)
 
   const { data: rows = [], isLoading } = useQuery({
-    queryKey: ['locations', orgId],
+    // Augmented rows -- must not share the plain ['locations', orgId] key that
+    // LogicTester, DataTablePage, ProviderProfilePage, QuestionsPage and
+    // WidgetBuilderPage read Location[] from.
+    queryKey: ['locations-with-counts', orgId],
     queryFn: async () => {
       const locs = (await getLocations(orgId)).filter(Boolean)
-      const counts = await Promise.all(locs.map((l) => getLocationOfferingCount(l.id)))
-      return locs.map((loc, i) => ({
+      const counts = await getLocationOfferingCounts(locs.map((l) => l.id))
+      return locs.map((loc) => ({
         location: loc,
-        offeringCount: counts[i],
+        offeringCount: counts[loc.id] ?? 0,
       }))
     },
     enabled: Boolean(orgId),
@@ -134,6 +137,7 @@ export default function LocationsPage() {
         setFormError(error)
         return
       }
+      await queryClient.invalidateQueries({ queryKey: ['locations-with-counts', orgId] })
       await queryClient.invalidateQueries({ queryKey: ['locations', orgId] })
       setModal({ type: null })
       toast.success('Location added')
@@ -152,6 +156,7 @@ export default function LocationsPage() {
         setFormError(error)
         return
       }
+      await queryClient.invalidateQueries({ queryKey: ['locations-with-counts', orgId] })
       await queryClient.invalidateQueries({ queryKey: ['locations', orgId] })
       setModal({ type: null })
       toast.success('Location updated')
@@ -170,6 +175,7 @@ export default function LocationsPage() {
       toast.error(error)
       return
     }
+    await queryClient.invalidateQueries({ queryKey: ['locations-with-counts', orgId] })
     await queryClient.invalidateQueries({ queryKey: ['locations', orgId] })
     await queryClient.invalidateQueries({ queryKey: ['data-table-offerings', orgId] })
     await queryClient.invalidateQueries({ queryKey: ['provider-locations'] })

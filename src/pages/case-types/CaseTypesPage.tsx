@@ -3,7 +3,7 @@ import SortableEntityListPage from '../../components/shared/SortableEntityListPa
 import {
   archiveCaseType,
   createCaseType,
-  getCaseTypeOfferingCount,
+  getCaseTypeOfferingCounts,
   getCaseTypes,
   updateCaseType,
   updateCaseTypeOrders,
@@ -20,7 +20,7 @@ export default function CaseTypesPage() {
       alsoInvalidate={['case-types']}
       api={{
         list: getCaseTypes,
-        offeringCount: getCaseTypeOfferingCount,
+        offeringCounts: getCaseTypeOfferingCounts,
         create: createCaseType,
         update: updateCaseType,
         updateOrders: updateCaseTypeOrders,

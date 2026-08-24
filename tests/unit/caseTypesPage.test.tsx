@@ -27,7 +27,7 @@ const caseType = (over: Partial<CaseType> = {}): CaseType =>
 
 const api = vi.hoisted(() => ({
   getCaseTypes: vi.fn(),
-  getCaseTypeOfferingCount: vi.fn(),
+  getCaseTypeOfferingCounts: vi.fn(),
   createCaseType: vi.fn(),
   updateCaseType: vi.fn(),
   updateCaseTypeOrders: vi.fn(),
@@ -69,7 +69,9 @@ beforeEach(() => {
     caseType({ id: 'ct1', name: 'Knee Pain', order_rank: 0 }),
     caseType({ id: 'ct2', name: 'Shoulder Pain', order_rank: 1 }),
   ])
-  api.getCaseTypeOfferingCount.mockResolvedValue(0)
+  api.getCaseTypeOfferingCounts.mockImplementation(async (ids: string[]) =>
+    Object.fromEntries(ids.map((id) => [id, 0])),
+  )
   api.createCaseType.mockResolvedValue({ error: null })
   api.updateCaseType.mockResolvedValue({ error: null })
   api.archiveCaseType.mockResolvedValue({ error: null })

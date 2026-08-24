@@ -29,7 +29,7 @@ const category = (over: Partial<Category> = {}): Category =>
 
 const api = vi.hoisted(() => ({
   getCategories: vi.fn(),
-  getCategoryOfferingCount: vi.fn(),
+  getCategoryOfferingCounts: vi.fn(),
   createCategory: vi.fn(),
   updateCategory: vi.fn(),
   updateCategoryOrders: vi.fn(),
@@ -66,7 +66,9 @@ beforeEach(() => {
     category({ id: 'cat1', name: 'Sports Medicine', sort_order: 0 }),
     category({ id: 'cat2', name: 'Joint Replacement', sort_order: 1 }),
   ])
-  api.getCategoryOfferingCount.mockResolvedValue(0)
+  api.getCategoryOfferingCounts.mockImplementation(async (ids: string[]) =>
+    Object.fromEntries(ids.map((id) => [id, 0])),
+  )
   api.createCategory.mockResolvedValue({ error: null })
   api.updateCategory.mockResolvedValue({ error: null })
   api.updateCategoryOrders.mockResolvedValue({ error: null })

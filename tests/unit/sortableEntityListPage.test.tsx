@@ -17,7 +17,7 @@ import type { CaseType, Category } from '../../src/types/database'
 
 const catApi = vi.hoisted(() => ({
   getCategories: vi.fn(),
-  getCategoryOfferingCount: vi.fn(),
+  getCategoryOfferingCounts: vi.fn(),
   createCategory: vi.fn(),
   updateCategory: vi.fn(),
   updateCategoryOrders: vi.fn(),
@@ -25,7 +25,7 @@ const catApi = vi.hoisted(() => ({
 }))
 const ctApi = vi.hoisted(() => ({
   getCaseTypes: vi.fn(),
-  getCaseTypeOfferingCount: vi.fn(),
+  getCaseTypeOfferingCounts: vi.fn(),
   createCaseType: vi.fn(),
   updateCaseType: vi.fn(),
   updateCaseTypeOrders: vi.fn(),
@@ -72,7 +72,9 @@ beforeEach(() => {
   catApi.getCategories.mockResolvedValue([
     cat({ id: 'cat1', name: 'Sports Medicine', sort_order: 0 }),
   ])
-  catApi.getCategoryOfferingCount.mockResolvedValue(0)
+  catApi.getCategoryOfferingCounts.mockImplementation(async (ids: string[]) =>
+    Object.fromEntries(ids.map((id) => [id, 0])),
+  )
   catApi.createCategory.mockResolvedValue({ error: null })
   catApi.updateCategory.mockResolvedValue({ error: null })
   catApi.updateCategoryOrders.mockResolvedValue({ error: null })
@@ -88,7 +90,9 @@ beforeEach(() => {
       updated_at: '',
     } as CaseType,
   ])
-  ctApi.getCaseTypeOfferingCount.mockResolvedValue(0)
+  ctApi.getCaseTypeOfferingCounts.mockImplementation(async (ids: string[]) =>
+    Object.fromEntries(ids.map((id) => [id, 0])),
+  )
   ctApi.createCaseType.mockResolvedValue({ error: null })
   ctApi.updateCaseType.mockResolvedValue({ error: null })
   ctApi.updateCaseTypeOrders.mockResolvedValue({ error: null })
@@ -110,14 +114,17 @@ describe('scale', () => {
     expect(ms).toBeLessThan(15_000)
   })
 
-  it('runs one offering-count request per row', async () => {
+  it('fetches offering counts for the whole list in one call, not one per row', async () => {
     const many = Array.from({ length: 120 }, (_, i) =>
       cat({ id: `c${i}`, name: `Category ${i}`, sort_order: i }),
     )
     catApi.getCategories.mockResolvedValue(many)
     renderPage(CategoriesPage)
     await screen.findByText('Category 119')
-    expect(catApi.getCategoryOfferingCount).toHaveBeenCalledTimes(120)
+    // Guards the N+1 fix: this used to issue one request per row (two, for
+    // categories), so a large tenant fired hundreds on every page load.
+    expect(catApi.getCategoryOfferingCounts).toHaveBeenCalledTimes(1)
+    expect(catApi.getCategoryOfferingCounts.mock.calls[0][0]).toHaveLength(120)
   })
 })
 

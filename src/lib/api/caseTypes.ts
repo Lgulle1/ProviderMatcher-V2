@@ -1,5 +1,6 @@
 import { supabase } from '../supabase'
 import type { CaseType } from '../../types/database'
+import { selectAllRows } from './paginate'
 
 export async function getCaseTypes(orgId: string): Promise<CaseType[]> {
   const { data, error } = await supabase
@@ -84,4 +85,43 @@ export async function getCaseTypeOfferingCount(caseTypeId: string): Promise<numb
   }
 
   return count ?? 0
+}
+
+/**
+ * Offering counts for many case types in one pass.
+ *
+ * Replaces calling getCaseTypeOfferingCount() per row, which issued one request
+ * per case type — fine for a handful, but a list page with 50 of them fired 50
+ * requests on every load.
+ */
+export async function getCaseTypeOfferingCounts(
+  caseTypeIds: string[],
+): Promise<Record<string, number>> {
+  const counts: Record<string, number> = {}
+  for (const id of caseTypeIds) {
+    counts[id] = 0
+  }
+  if (caseTypeIds.length === 0) {
+    return counts
+  }
+
+  const rows = await selectAllRows<{ case_type_id: string | null }>((from, to) =>
+    supabase
+      .from('offerings')
+      .select('case_type_id')
+      .eq('is_archived', false)
+      .in('case_type_id', caseTypeIds)
+      .range(from, to),
+  )
+  if (!rows) {
+    return counts
+  }
+
+  for (const row of rows) {
+    if (row.case_type_id != null && row.case_type_id in counts) {
+      counts[row.case_type_id] += 1
+    }
+  }
+
+  return counts
 }
