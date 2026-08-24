@@ -81,25 +81,11 @@ export async function archiveLocation(id: string, orgId: string): Promise<{ erro
   return { error: archiveError?.message ?? null }
 }
 
-export async function getLocationOfferingCount(locationId: string): Promise<number> {
-  const { count, error } = await supabase
-    .from('offerings')
-    .select('*', { count: 'exact', head: true })
-    .eq('is_archived', false)
-    .contains('location_ids', [locationId])
-
-  if (error) {
-    return 0
-  }
-
-  return count ?? 0
-}
-
 /**
  * Offering counts for many locations in one pass.
  *
- * Replaces calling getLocationOfferingCount() per row, which issued one request
- * per location on every load of the locations list.
+ * Counting per row previously cost one request per location on every load of
+ * the locations list.
  */
 export async function getLocationOfferingCounts(
   locationIds: string[],

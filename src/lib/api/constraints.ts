@@ -1,5 +1,6 @@
 import { supabase } from '../supabase'
 import type { Constraint } from '../../types/database'
+import { selectAllRows } from './paginate'
 
 export async function getConstraints(orgId: string): Promise<Constraint[]> {
   const { data, error } = await supabase
@@ -49,16 +50,40 @@ export async function getNextConstraintSortOrder(orgId: string): Promise<number>
   return Math.max(...list.map((c) => c.sort_order)) + 1
 }
 
-export async function getConstraintQuestionCount(constraintId: string): Promise<number> {
-  const { count, error } = await supabase
-    .from('questions')
-    .select('*', { count: 'exact', head: true })
-    .eq('constraint_id', constraintId)
-    .eq('is_archived', false)
-
-  if (error) {
-    return 0
+/**
+ * Question counts for many constraints in one pass.
+ *
+ * Counting per row previously cost one request per constraint on every load of
+ * the constraints list.
+ */
+export async function getConstraintQuestionCounts(
+  constraintIds: string[],
+): Promise<Record<string, number>> {
+  const counts: Record<string, number> = {}
+  for (const id of constraintIds) {
+    counts[id] = 0
+  }
+  if (constraintIds.length === 0) {
+    return counts
   }
 
-  return count ?? 0
+  const rows = await selectAllRows<{ constraint_id: string | null }>((from, to) =>
+    supabase
+      .from('questions')
+      .select('constraint_id')
+      .eq('is_archived', false)
+      .in('constraint_id', constraintIds)
+      .range(from, to),
+  )
+  if (!rows) {
+    return counts
+  }
+
+  for (const row of rows) {
+    if (row.constraint_id != null && row.constraint_id in counts) {
+      counts[row.constraint_id] += 1
+    }
+  }
+
+  return counts
 }

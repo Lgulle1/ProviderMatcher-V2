@@ -73,38 +73,14 @@ export async function archiveCategory(id: string): Promise<{ error: string | nul
   return { error: error?.message ?? null }
 }
 
-/** Non-archived offerings whose provider includes this category in category_ids (parity with case type usage badge). */
-export async function getCategoryOfferingCount(categoryId: string): Promise<number> {
-  const { data: providers, error: pErr } = await supabase
-    .from('providers')
-    .select('id')
-    .eq('is_archived', false)
-    .contains('category_ids', [categoryId])
-
-  if (pErr || !providers?.length) {
-    return 0
-  }
-
-  const providerIds = providers.map((p) => p.id)
-  const { count, error } = await supabase
-    .from('offerings')
-    .select('*', { count: 'exact', head: true })
-    .eq('is_archived', false)
-    .in('provider_id', providerIds)
-
-  if (error) {
-    return 0
-  }
-
-  return count ?? 0
-}
-
 /**
- * Offering counts for many categories in one pass.
+ * Offering counts for many categories in one pass — for each category, the
+ * non-archived offerings whose provider lists it in category_ids (parity with
+ * the case type usage badge).
  *
- * Replaces calling getCategoryOfferingCount() per row, which issued *two*
- * requests per category (providers, then their offerings) — 50 categories meant
- * 100 requests on every load. Two paged reads now cover the whole list.
+ * Counting per row previously cost *two* requests per category (its providers,
+ * then their offerings), so 50 categories meant 100 requests on every load.
+ * Two paged reads now cover the whole list.
  */
 export async function getCategoryOfferingCounts(
   categoryIds: string[],

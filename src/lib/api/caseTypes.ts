@@ -73,26 +73,11 @@ export async function archiveCaseType(id: string): Promise<{ error: string | nul
   return { error: error?.message ?? null }
 }
 
-export async function getCaseTypeOfferingCount(caseTypeId: string): Promise<number> {
-  const { count, error } = await supabase
-    .from('offerings')
-    .select('*', { count: 'exact', head: true })
-    .eq('case_type_id', caseTypeId)
-    .eq('is_archived', false)
-
-  if (error) {
-    return 0
-  }
-
-  return count ?? 0
-}
-
 /**
  * Offering counts for many case types in one pass.
  *
- * Replaces calling getCaseTypeOfferingCount() per row, which issued one request
- * per case type — fine for a handful, but a list page with 50 of them fired 50
- * requests on every load.
+ * Counting per row previously cost one request per case type — fine for a
+ * handful, but a list page with 50 of them fired 50 requests on every load.
  */
 export async function getCaseTypeOfferingCounts(
   caseTypeIds: string[],

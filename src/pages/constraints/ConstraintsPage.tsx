@@ -9,7 +9,7 @@ import {
   archiveConstraint,
   createConstraint,
   getConstraints,
-  getConstraintQuestionCount,
+  getConstraintQuestionCounts,
   getNextConstraintSortOrder,
   updateConstraint,
 } from '../../lib/api/constraints'
@@ -52,13 +52,16 @@ export default function ConstraintsPage() {
   const [archiveLoading, setArchiveLoading] = useState(false)
 
   const { data, isLoading } = useQuery({
-    queryKey: ['constraints', orgId],
+    // Augmented rows -- must not share the plain ['constraints', orgId] key that
+    // LogicTester, DataTablePage, ProviderProfilePage and QuestionsPage read
+    // Constraint[] from.
+    queryKey: ['constraints-with-counts', orgId],
     queryFn: async () => {
       const list = await getConstraints(orgId)
-      const counts = await Promise.all(list.map((c) => getConstraintQuestionCount(c.id)))
-      return list.map((constraint, i) => ({
+      const counts = await getConstraintQuestionCounts(list.map((c) => c.id))
+      return list.map((constraint) => ({
         constraint,
-        questionCount: counts[i],
+        questionCount: counts[constraint.id] ?? 0,
       }))
     },
     enabled: Boolean(orgId),
@@ -106,6 +109,7 @@ export default function ConstraintsPage() {
     if (error) {
       throw new Error(error)
     }
+    await queryClient.invalidateQueries({ queryKey: ['constraints-with-counts', orgId] })
     await queryClient.invalidateQueries({ queryKey: ['constraints', orgId] })
     setModal({ type: null })
     toast.success('Constraint created')
@@ -119,6 +123,7 @@ export default function ConstraintsPage() {
     if (error) {
       throw new Error(error)
     }
+    await queryClient.invalidateQueries({ queryKey: ['constraints-with-counts', orgId] })
     await queryClient.invalidateQueries({ queryKey: ['constraints', orgId] })
     setModal({ type: null })
     toast.success('Constraint updated')
@@ -136,6 +141,7 @@ export default function ConstraintsPage() {
       toast.error(error)
       return
     }
+    await queryClient.invalidateQueries({ queryKey: ['constraints-with-counts', orgId] })
     await queryClient.invalidateQueries({ queryKey: ['constraints', orgId] })
     setModal({ type: null })
     toast.success('Constraint archived')
