@@ -228,6 +228,14 @@ export async function executeImportRun(params: ExecuteImportParams): Promise<Exe
   const constraintById = new Map(orgConstraints.map((c) => [c.id, c]))
   const importedProviderNameToId: Record<string, string> = {}
 
+  // Categories accumulate across every row touching the same provider.
+  // updateProviderCategories replaces category_ids outright, so without this a
+  // provider spanning several rows -- the ordinary shape of an import file, one
+  // row per case type -- would keep only the last row's categories. Seeded from
+  // the existing record on first touch so a merge does not drop what was
+  // already there.
+  const categoryIdsByProvider = new Map<string, Set<string>>()
+
   for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
     const row = rows[rowIndex]
     if (!providerHeader) {
@@ -353,9 +361,15 @@ export async function executeImportRun(params: ExecuteImportParams): Promise<Exe
     }
 
     if (categoryIdsFromRow.length > 0) {
-      const existingCats = isMerge && conflict ? conflict.existingProvider.category_ids ?? [] : []
-      const mergedCats = [...new Set([...existingCats, ...categoryIdsFromRow])]
-      const { error: catErr } = await updateProviderCategories(providerId, mergedCats)
+      let accumulated = categoryIdsByProvider.get(providerId)
+      if (!accumulated) {
+        const existingCats = isMerge && conflict ? (conflict.existingProvider.category_ids ?? []) : []
+        accumulated = new Set(existingCats)
+        categoryIdsByProvider.set(providerId, accumulated)
+      }
+      categoryIdsFromRow.forEach((categoryId) => accumulated.add(categoryId))
+
+      const { error: catErr } = await updateProviderCategories(providerId, [...accumulated])
       if (catErr) {
         throw new Error(catErr)
       }
