@@ -88,14 +88,22 @@ async function parseExcel(file: File): Promise<ParseResult> {
 
     const grid = XLSX.utils.sheet_to_json<unknown[]>(firstSheet, { header: 1 })
     const headerRow = (grid[0] ?? []).map((cell) => trimValue(cell))
-    const headers = headerRow.filter((header) => header.length > 0)
+
+    // Each header keeps the column it actually sits in. Dropping blank headers
+    // from the list must not renumber the rest, or every column after a spacer
+    // would read its neighbour's cell -- silently, with a plausible-looking
+    // preview.
+    const headerColumns = headerRow
+      .map((header, columnIndex) => ({ header, columnIndex }))
+      .filter((entry) => entry.header.length > 0)
+    const headers = headerColumns.map((entry) => entry.header)
     const dataRows = grid.slice(1)
 
     const rows = dataRows
       .map((cells) => {
         const row: Record<string, string> = {}
-        headers.forEach((header, index) => {
-          row[header] = trimValue(cells[index])
+        headerColumns.forEach(({ header, columnIndex }) => {
+          row[header] = trimValue(cells[columnIndex])
         })
         return row
       })
