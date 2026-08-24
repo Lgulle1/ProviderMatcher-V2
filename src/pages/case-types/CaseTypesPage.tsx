@@ -13,9 +13,11 @@ import type { CaseType } from '../../types/database'
 export default function CaseTypesPage() {
   return (
     <SortableEntityListPage<CaseType>
-      // Hyphenated, unlike the 'categories' key -- other code invalidates this
-      // exact string, so it must stay as it was.
-      queryKey="case-types"
+      // This page caches counts-augmented rows, so it cannot share the plain
+      // ['case-types', orgId] key that LogicTester, DataTablePage,
+      // ProviderProfilePage and WidgetBuilderPage read CaseType[] from.
+      queryKey="case-types-with-counts"
+      alsoInvalidate={['case-types']}
       api={{
         list: getCaseTypes,
         offeringCount: getCaseTypeOfferingCount,

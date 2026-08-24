@@ -13,7 +13,11 @@ import type { Category } from '../../types/database'
 export default function CategoriesPage() {
   return (
     <SortableEntityListPage<Category>
-      queryKey="categories"
+      // This page caches counts-augmented rows, so it cannot share the plain
+      // ['categories', orgId] key that ProvidersPage, LogicTester,
+      // DataTablePage and ProviderProfilePage read Category[] from.
+      queryKey="categories-with-counts"
+      alsoInvalidate={['categories']}
       api={{
         list: getCategories,
         offeringCount: getCategoryOfferingCount,

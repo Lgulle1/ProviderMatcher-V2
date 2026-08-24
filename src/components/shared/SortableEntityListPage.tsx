@@ -143,12 +143,24 @@ function SortableEntityRow<T extends SortableEntity>({
 
 export default function SortableEntityListPage<T extends SortableEntity>({
   queryKey,
+  alsoInvalidate = [],
   api,
   copy,
   icon,
 }: {
-  /** Query key prefix; the org id is appended, e.g. 'categories'. */
+  /**
+   * Key prefix for this page's own query; the org id is appended. Must be
+   * distinct from the plain-list key other pages use — this query caches
+   * counts-augmented rows, and two shapes under one key means whichever
+   * mounted first serves its shape to the other. See `alsoInvalidate`.
+   */
   queryKey: string
+  /**
+   * Additional key prefixes to invalidate after a mutation. The plain-list key
+   * belongs here: other pages read the entity list under it, and they must
+   * still refresh when something is added, renamed, archived or reordered.
+   */
+  alsoInvalidate?: string[]
   api: SortableEntityApi<T>
   copy: SortableEntityCopy
   icon: ReactNode
@@ -156,6 +168,14 @@ export default function SortableEntityListPage<T extends SortableEntity>({
   const orgId = useAuthStore((s) => s.org?.id ?? '')
   const queryClient = useQueryClient()
   const { toast } = useToast()
+
+  /** Refresh this page's rows and every other view of the same entity. */
+  async function invalidateAll() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: [queryKey, orgId] }),
+      ...alsoInvalidate.map((key) => queryClient.invalidateQueries({ queryKey: [key, orgId] })),
+    ])
+  }
 
   const [modal, setModal] = useState<{ type: 'add' | 'edit' | 'archive' | null; payload?: T }>({
     type: null,
@@ -283,7 +303,7 @@ export default function SortableEntityListPage<T extends SortableEntity>({
         setFormError(error)
         return
       }
-      await queryClient.invalidateQueries({ queryKey: [queryKey, orgId] })
+      await invalidateAll()
       setModal({ type: null })
       toast.success(`${toastLabel(copy.singularLower)} added`)
       return
@@ -296,7 +316,7 @@ export default function SortableEntityListPage<T extends SortableEntity>({
         setFormError(error)
         return
       }
-      await queryClient.invalidateQueries({ queryKey: [queryKey, orgId] })
+      await invalidateAll()
       setModal({ type: null })
       toast.success(`${toastLabel(copy.singularLower)} updated`)
     }
@@ -314,7 +334,7 @@ export default function SortableEntityListPage<T extends SortableEntity>({
       toast.error(error)
       return
     }
-    await queryClient.invalidateQueries({ queryKey: [queryKey, orgId] })
+    await invalidateAll()
     setModal({ type: null })
     toast.success(`${toastLabel(copy.singularLower)} archived`)
   }
@@ -341,7 +361,7 @@ export default function SortableEntityListPage<T extends SortableEntity>({
       toast.error(error)
       return
     }
-    await queryClient.invalidateQueries({ queryKey: [queryKey, orgId] })
+    await invalidateAll()
   }
 
   return (
