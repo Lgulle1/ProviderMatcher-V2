@@ -19,6 +19,9 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # Only run if widget health check is configured. Skip silently if variables
+    # are missing (common before staging/production setup).
+    if: vars.WIDGET_HEALTH_SUPABASE_URL != '' && secrets.WIDGET_HEALTH_ANON_KEY != ''
     env:
       WIDGET_HEALTH_SUPABASE_URL: ${{ vars.WIDGET_HEALTH_SUPABASE_URL }}
       WIDGET_HEALTH_ANON_KEY: ${{ secrets.WIDGET_HEALTH_ANON_KEY }}
