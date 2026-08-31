@@ -1,0 +1,3 @@
+-- Historical migration marker retained because this version is already in the
+-- linked project's migration history. The missing prehistory is reconstructed
+-- by 20260619090000_baseline_schema.sql.

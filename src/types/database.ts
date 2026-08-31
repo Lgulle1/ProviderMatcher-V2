@@ -16,6 +16,7 @@ export interface User {
   org_id: string
   name: string | null
   email: string
+  role: 'viewer' | 'editor' | 'owner'
   created_at: string
   updated_at: string
 }
@@ -138,6 +139,7 @@ export interface Widget {
   button_text: string
   greeting_text: string
   disclaimer_text: string | null
+  privacy_url: string | null
   fallback_message: string | null
   show_worth_the_drive: boolean
   embed_mode: 'floating' | 'inline'
@@ -168,6 +170,18 @@ export interface ImportHistory {
   duplicates_detected: number
   errors: number
   mapping_template: Record<string, unknown> | null
+  created_at: string
+}
+
+export interface OrganizationInvitation {
+  id: string
+  org_id: string
+  email: string
+  role: 'viewer' | 'editor' | 'owner'
+  status: 'pending' | 'accepted' | 'revoked' | 'expired'
+  invited_by: string
+  expires_at: string
+  accepted_at: string | null
   created_at: string
 }
 
