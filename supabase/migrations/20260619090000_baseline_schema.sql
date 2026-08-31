@@ -260,5 +260,27 @@ BEGIN
 END;
 $updated_at_triggers$;
 
+-- Supabase gives the API roles table-level privileges and relies on RLS to
+-- decide which rows they may actually touch. 20260821121500 records the same
+-- thing from the other direction: "REST access relies on the same table
+-- grants, so those grants can't be revoked without breaking the app."
+--
+-- Those grants exist on the live database but no migration ever created them,
+-- so a database rebuilt purely from this repo denied even the service role:
+--
+--   permission denied for table organizations
+--
+-- Reproduced here so a rebuild matches production. The default privileges
+-- cover tables that later migrations add (admin_audit_log,
+-- organization_invitations), which the ALL TABLES grants cannot reach because
+-- they do not exist yet at this point in the sequence.
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT ALL ON TABLES TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
+
 -- This baseline is intentionally schema-only. Seed/reference data belongs in
 -- explicit seed files; tenant or patient data must never be committed.
