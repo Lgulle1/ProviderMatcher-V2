@@ -42,7 +42,16 @@ token_verifications = 20
 email_sent = 5
 
 [auth.email]
-enable_signup = false
+# Despite the name, the CLI maps this to GOTRUE_EXTERNAL_EMAIL_ENABLED, so
+# setting it false turns the email provider off entirely -- signup AND signin.
+# It made every password login fail with "Email logins are disabled", which
+# blocked the integration tests from authenticating as a tenant at all.
+#
+# Public signup is blocked by [auth].enable_signup above (GOTRUE_DISABLE_SIGNUP),
+# and invite-only onboarding is enforced in the database by complete_signup,
+# which requires auth.users.invited_at. Neither depends on this flag, so
+# enabling the provider does not reopen self-serve signup.
+enable_signup = true
 double_confirm_changes = true
 enable_confirmations = true
 secure_password_change = true
