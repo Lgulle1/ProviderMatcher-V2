@@ -55,9 +55,15 @@
         "npm:typescript@~5.9.3",
         "npm:vite@^8.0.1",
         "npm:vitest@^4.1.10",
+        "npm:yaml@^2.9.0",
         "npm:zod@^4.4.3",
         "npm:zustand@^5.0.15"
-      ]
+      ],
+      "overrides": {
+        "@hookform/resolvers": {
+          "ajv": "^6.12.4"
+        }
+      }
     }
   }
 }
