@@ -17,6 +17,7 @@
     "check:edge-safety": "node scripts/check-public-edge-safety.mjs",
     "check:edge-types": "npx --yes deno@2.9.5 check supabase/functions/widget-data/index.ts supabase/functions/track-session/index.ts supabase/functions/invite-member/index.ts",
     "check:migrations": "node scripts/check-migrations.mjs",
+    "check:db-types": "node scripts/check-db-types.mjs",
     "check:workflows": "node scripts/check-workflows.mjs",
     "check:secrets": "node scripts/check-secrets.mjs",
     "check:artifacts": "node scripts/check-build-artifacts.mjs",
