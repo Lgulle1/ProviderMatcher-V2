@@ -42,6 +42,9 @@ try {
   stackStarted = true
   run('Rebuild database from migrations', supabase, ['db', 'reset', '--local'])
   run('Database lint', supabase, ['db', 'lint', '--local', '--level', 'error'])
+  // Runs here, not in verify-release, because it needs the disposable database
+  // this script has just built from the migrations.
+  run('Generated types match migrations', npm, ['run', 'check:db-types'])
 
   const local = parseEnv(run('Read local test configuration', supabase, ['status', '-o', 'env'], { capture: true }))
   for (const name of ['API_URL', 'ANON_KEY', 'SERVICE_ROLE_KEY']) {
