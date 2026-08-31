@@ -20,9 +20,37 @@ const root = resolve(import.meta.dirname, '..')
 const committedPath = resolve(root, 'src/types/database.generated.ts')
 const supabase = process.platform === 'win32' ? 'supabase.exe' : 'supabase'
 
-/** Line endings and a BOM differ by who generated the file, not by schema. */
+/**
+ * Reduce a generated file to just the schema it describes.
+ *
+ * Line endings and a BOM depend on which shell wrote the file. The
+ * __InternalSupabase block matters more: newer CLIs emit it and older ones do
+ * not, and it carries the instance's PostgREST version, which legitimately
+ * differs between a local container and the hosted project. Comparing it would
+ * report a tooling difference as a schema change, which is the opposite of
+ * useful.
+ */
 function normalize(text) {
-  return text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').trimEnd()
+  const lines = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').split('\n')
+  const kept = []
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i]
+    if (/^\s*\/\/ Allows to automatically instantiate createClient/.test(line)) continue
+    if (/^\s*\/\/ instead of createClient</.test(line)) continue
+
+    const opensMetadata = /^(\s*)__InternalSupabase: \{/.exec(line)
+    if (opensMetadata) {
+      const closing = opensMetadata[1] + '}'
+      i += 1
+      while (i < lines.length && lines[i] !== closing) i += 1
+      continue
+    }
+
+    kept.push(line)
+  }
+
+  return kept.join('\n').trimEnd()
 }
 
 const result = spawnSync(supabase, ['gen', 'types', 'typescript', '--local'], {
@@ -32,11 +60,11 @@ const result = spawnSync(supabase, ['gen', 'types', 'typescript', '--local'], {
 })
 
 if (result.error) {
-  console.error(`Could not run supabase gen types: ${result.error.message}`)
+  console.error('Could not run supabase gen types: ' + result.error.message)
   process.exit(1)
 }
 if (result.status !== 0) {
-  console.error(`supabase gen types failed with exit code ${result.status ?? 'unknown'}`)
+  console.error('supabase gen types failed with exit code ' + (result.status ?? 'unknown'))
   if (result.stderr) console.error(result.stderr)
   process.exit(1)
 }
@@ -45,24 +73,26 @@ const generated = normalize(result.stdout)
 const committed = normalize(readFileSync(committedPath, 'utf8'))
 
 if (generated === committed) {
-  const tables = (committed.match(/^ {6}[a-z_]+: \{$/gm) ?? []).length
-  console.log(`src/types/database.generated.ts matches the migrations (${tables} definitions)`)
+  const definitions = (committed.match(/^ {6}[a-z_]+: \{$/gm) ?? []).length
+  console.log(
+    'src/types/database.generated.ts matches the migrations (' + definitions + ' definitions)'
+  )
   process.exit(0)
 }
 
 // Report the first difference rather than dumping a thousand lines.
-const a = committed.split('\n')
-const b = generated.split('\n')
-const firstDiff = a.findIndex((line, i) => line !== b[i])
+const committedLines = committed.split('\n')
+const generatedLines = generated.split('\n')
+const firstDiff = committedLines.findIndex((line, i) => line !== generatedLines[i])
 
 console.error('src/types/database.generated.ts does not match the migrations.')
 console.error('')
-console.error(`Committed: ${a.length} lines`)
-console.error(`Generated: ${b.length} lines`)
+console.error('Committed: ' + committedLines.length + ' lines')
+console.error('Generated: ' + generatedLines.length + ' lines')
 if (firstDiff !== -1) {
-  console.error(`First difference at line ${firstDiff + 1}:`)
-  console.error(`  committed: ${JSON.stringify(a[firstDiff] ?? '<end of file>')}`)
-  console.error(`  generated: ${JSON.stringify(b[firstDiff] ?? '<end of file>')}`)
+  console.error('First difference at line ' + (firstDiff + 1) + ':')
+  console.error('  committed: ' + JSON.stringify(committedLines[firstDiff] ?? '<end of file>'))
+  console.error('  generated: ' + JSON.stringify(generatedLines[firstDiff] ?? '<end of file>'))
 }
 console.error('')
 console.error('A migration changed the schema without the types following it.')
