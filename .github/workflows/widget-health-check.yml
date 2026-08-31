@@ -19,9 +19,11 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    # Only run if widget health check is configured. Skip silently if variables
-    # are missing (common before staging/production setup).
-    if: vars.WIDGET_HEALTH_SUPABASE_URL != '' && secrets.WIDGET_HEALTH_ANON_KEY != ''
+    # Only run if widget health check is configured. Skip silently if variable
+    # is missing (common before staging/production setup). GitHub Actions 'if:'
+    # cannot reference secrets directly; the secret will still be empty if not
+    # configured, causing the script to fail gracefully with a clear error.
+    if: vars.WIDGET_HEALTH_SUPABASE_URL != ''
     env:
       WIDGET_HEALTH_SUPABASE_URL: ${{ vars.WIDGET_HEALTH_SUPABASE_URL }}
       WIDGET_HEALTH_ANON_KEY: ${{ secrets.WIDGET_HEALTH_ANON_KEY }}
