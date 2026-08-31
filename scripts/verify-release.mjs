@@ -3,7 +3,8 @@ import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
-const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm'
+const isWindows = process.platform === 'win32'
+const npm = 'npm'
 
 const steps = [
   ['Workflow policy', npm, ['run', 'check:workflows'], root],
@@ -29,11 +30,18 @@ const steps = [
 
 for (const [label, command, args, cwd, extraEnv = {}] of steps) {
   console.log(`\n=== ${label} ===`)
-  const executable = process.platform === 'win32' && command === 'npx' ? 'npx.cmd' : command
-  const result = spawnSync(executable, args, {
+  const result = spawnSync(command, args, {
     cwd,
     env: { ...process.env, ...extraEnv },
     stdio: 'inherit',
+    // npm and npx are .cmd shims on Windows, and since the fix for
+    // CVE-2024-27980 (Node 20.12+) spawn refuses to run those without a
+    // shell -- it fails with EINVAL before the step even starts, so this
+    // whole gate was unrunnable on Windows. Route through cmd.exe there.
+    // POSIX keeps the direct spawn, so CI behaviour is unchanged.
+    // Every command and argument above is a static literal in this file,
+    // so there is no injection surface to worry about.
+    shell: isWindows,
   })
   if (result.error) {
     console.error(`${label} could not start: ${result.error.message}`)
