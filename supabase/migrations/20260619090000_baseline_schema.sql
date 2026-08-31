@@ -5,6 +5,14 @@
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA extensions;
 
+-- pg_trgm was installed on the live database in `public`, and 20260821120000
+-- relocates it to `extensions`. That ALTER EXTENSION fails with 42704 on a
+-- database built from scratch unless the extension already exists, so the
+-- baseline has to create it exactly where the live one sat -- `public` -- and
+-- let the later migration do the move. Nothing references trigram operators;
+-- it is reproduced here so a rebuilt database matches production.
+CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
+
 CREATE TABLE IF NOT EXISTS public.organizations (
   id uuid PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
   name text NOT NULL,
