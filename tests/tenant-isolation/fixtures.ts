@@ -294,7 +294,11 @@ async function seedFullTenantBRecords(
     throw new Error(`Failed to seed import_history for tenant B: ${importHistoryError?.message}`)
   }
 
-  const widgetSessionKey = `rls-test-session-b-${randomId()}`
+  // Both widget_sessions.session_id and widget_session_events.session_id are
+  // uuid columns, so this cannot carry a readable prefix: Postgres rejects
+  // "rls-test-session-b-<uuid>" with 22P02 invalid input syntax for type uuid.
+  // The seeded rows are identifiable by their tenant-B org_id and widget_id.
+  const widgetSessionKey = randomId()
   const { data: widgetSession, error: widgetSessionError } = await service
     .from('widget_sessions')
     .insert({
