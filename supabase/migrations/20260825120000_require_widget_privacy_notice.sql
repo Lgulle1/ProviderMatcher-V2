@@ -10,7 +10,7 @@ ALTER TABLE public.widgets
   CHECK (privacy_url IS NULL OR privacy_url ~* '^https://[^[:space:]]+$')
   NOT VALID;
 
-CREATE OR REPLACE FUNCTION private.enforce_widget_publication_requirements()
+CREATE OR REPLACE FUNCTION provider_matcher_private.enforce_widget_publication_requirements()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -26,7 +26,7 @@ BEGIN
   SELECT o.allowed_domains INTO v_domains
   FROM public.organizations o WHERE o.id = NEW.org_id;
 
-  IF NOT private.allowed_domain_list_is_safe(v_domains) THEN
+  IF NOT provider_matcher_private.allowed_domain_list_is_safe(v_domains) THEN
     RAISE EXCEPTION 'Live widgets require 1-50 valid fully-qualified approved domains';
   END IF;
   IF nullif(btrim(NEW.disclaimer_text), '') IS NULL THEN
@@ -43,7 +43,7 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION private.enforce_widget_publication_requirements() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION provider_matcher_private.enforce_widget_publication_requirements() FROM PUBLIC, anon, authenticated;
 
 -- ROLLBACK: remove the privacy_url check from the publication function, then
 -- DROP CONSTRAINT widgets_privacy_url_https and DROP COLUMN privacy_url.

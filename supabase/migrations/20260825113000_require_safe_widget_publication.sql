@@ -2,7 +2,7 @@
 -- narrow, syntactically valid domain allowlist. These checks live in the
 -- database so they cannot be bypassed by calling the REST API directly.
 
-CREATE OR REPLACE FUNCTION private.allowed_domain_list_is_safe(p_domains text[])
+CREATE OR REPLACE FUNCTION provider_matcher_private.allowed_domain_list_is_safe(p_domains text[])
 RETURNS boolean
 LANGUAGE plpgsql
 IMMUTABLE
@@ -33,9 +33,9 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION private.allowed_domain_list_is_safe(text[]) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION provider_matcher_private.allowed_domain_list_is_safe(text[]) FROM PUBLIC, anon, authenticated;
 
-CREATE OR REPLACE FUNCTION private.enforce_widget_publication_requirements()
+CREATE OR REPLACE FUNCTION provider_matcher_private.enforce_widget_publication_requirements()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -53,7 +53,7 @@ BEGIN
     FROM public.organizations o
    WHERE o.id = NEW.org_id;
 
-  IF NOT private.allowed_domain_list_is_safe(v_domains) THEN
+  IF NOT provider_matcher_private.allowed_domain_list_is_safe(v_domains) THEN
     RAISE EXCEPTION 'Live widgets require 1-50 valid fully-qualified approved domains';
   END IF;
   IF nullif(btrim(NEW.disclaimer_text), '') IS NULL THEN
@@ -67,14 +67,14 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION private.enforce_widget_publication_requirements() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION provider_matcher_private.enforce_widget_publication_requirements() FROM PUBLIC, anon, authenticated;
 
 DROP TRIGGER IF EXISTS enforce_widget_publication_requirements ON public.widgets;
 CREATE TRIGGER enforce_widget_publication_requirements
   BEFORE INSERT OR UPDATE ON public.widgets
-  FOR EACH ROW EXECUTE FUNCTION private.enforce_widget_publication_requirements();
+  FOR EACH ROW EXECUTE FUNCTION provider_matcher_private.enforce_widget_publication_requirements();
 
-CREATE OR REPLACE FUNCTION private.prevent_live_widget_allowlist_removal()
+CREATE OR REPLACE FUNCTION provider_matcher_private.prevent_live_widget_allowlist_removal()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -83,23 +83,23 @@ AS $$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM public.widgets w WHERE w.org_id = NEW.id AND w.status = 'live'
-  ) AND NOT private.allowed_domain_list_is_safe(NEW.allowed_domains) THEN
+  ) AND NOT provider_matcher_private.allowed_domain_list_is_safe(NEW.allowed_domains) THEN
     RAISE EXCEPTION 'Unpublish all widgets before removing or invalidating approved domains';
   END IF;
   RETURN NEW;
 END;
 $$;
 
-REVOKE ALL ON FUNCTION private.prevent_live_widget_allowlist_removal() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION provider_matcher_private.prevent_live_widget_allowlist_removal() FROM PUBLIC, anon, authenticated;
 
 DROP TRIGGER IF EXISTS prevent_live_widget_allowlist_removal ON public.organizations;
 CREATE TRIGGER prevent_live_widget_allowlist_removal
   BEFORE UPDATE OF allowed_domains ON public.organizations
-  FOR EACH ROW EXECUTE FUNCTION private.prevent_live_widget_allowlist_removal();
+  FOR EACH ROW EXECUTE FUNCTION provider_matcher_private.prevent_live_widget_allowlist_removal();
 
 -- ROLLBACK (manual):
 -- DROP TRIGGER IF EXISTS prevent_live_widget_allowlist_removal ON public.organizations;
 -- DROP TRIGGER IF EXISTS enforce_widget_publication_requirements ON public.widgets;
--- DROP FUNCTION IF EXISTS private.prevent_live_widget_allowlist_removal();
--- DROP FUNCTION IF EXISTS private.enforce_widget_publication_requirements();
--- DROP FUNCTION IF EXISTS private.allowed_domain_list_is_safe(text[]);
+-- DROP FUNCTION IF EXISTS provider_matcher_private.prevent_live_widget_allowlist_removal();
+-- DROP FUNCTION IF EXISTS provider_matcher_private.enforce_widget_publication_requirements();
+-- DROP FUNCTION IF EXISTS provider_matcher_private.allowed_domain_list_is_safe(text[]);
