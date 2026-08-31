@@ -194,8 +194,13 @@ describe('tenant isolation (staging Supabase RLS)', () => {
         .eq('id', tenantA.records.location)
         .select('org_id')
 
-      expect(error).toBeNull()
-      expectDeniedRead(data)
+      // The row is tenant A's own, so the policy's USING clause admits it and
+      // the WITH CHECK clause rejects the new org_id -- Postgres raises 42501
+      // rather than silently matching zero rows. Asserting a null error and an
+      // empty result described a no-op that only happens when USING excludes
+      // the row, so it failed against a database that was behaving correctly.
+      expectDeniedWrite(error)
+      expect(data ?? []).toEqual([])
 
       const { data: unchanged } = await tenantA.client
         .from('locations')
@@ -361,7 +366,9 @@ describe('tenant isolation (staging Supabase RLS)', () => {
       const { error: insertError } = await tenantA.client.from('widget_sessions').insert({
         widget_id: tenantA.records.widget,
         org_id: tenantA.orgId,
-        session_id: `client-write-${randomId()}`,
+        // Must be a bare uuid: a prefixed string is rejected with 22P02 before
+        // RLS runs, which would make this assert type validation, not policy.
+        session_id: randomId(),
         zero_results: false,
         answers: {},
         providers_clicked: [],
@@ -420,7 +427,9 @@ describe('tenant isolation (staging Supabase RLS)', () => {
       const { error: insertError } = await tenantA.client.from('widget_session_events').insert({
         widget_id: tenantA.records.widget,
         org_id: tenantA.orgId,
-        session_id: `client-write-${randomId()}`,
+        // Must be a bare uuid: a prefixed string is rejected with 22P02 before
+        // RLS runs, which would make this assert type validation, not policy.
+        session_id: randomId(),
         event_type: 'probe',
       })
 

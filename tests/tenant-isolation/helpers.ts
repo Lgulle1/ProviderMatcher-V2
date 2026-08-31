@@ -160,7 +160,10 @@ export function anonInsertPayloads(
     widget_sessions: {
       org_id: forgedOrgId,
       widget_id: records.widget,
-      session_id: `anon-session-${randomUserId}`,
+      // session_id is a uuid column: a prefixed string is rejected with 22P02
+      // before RLS is ever consulted, so the probe would pass for the wrong
+      // reason -- blocked by type validation rather than by policy.
+      session_id: randomId(),
       zero_results: false,
       answers: {},
       providers_clicked: [],
@@ -169,7 +172,10 @@ export function anonInsertPayloads(
     widget_session_events: {
       org_id: forgedOrgId,
       widget_id: records.widget,
-      session_id: `anon-session-${randomUserId}`,
+      // session_id is a uuid column: a prefixed string is rejected with 22P02
+      // before RLS is ever consulted, so the probe would pass for the wrong
+      // reason -- blocked by type validation rather than by policy.
+      session_id: randomId(),
       event_type: 'probe',
     },
   }
