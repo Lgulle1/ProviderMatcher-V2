@@ -1,4 +1,5 @@
 import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shared/avatarPalette'
+import { readableTextColor } from '../../src/shared/colorContrast'
 
 ;(function () {
   'use strict'
@@ -19,16 +20,24 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
   var supabaseBaseUrl =
     typeof SUPABASE_URL !== 'undefined' ? SUPABASE_URL : ''
 
-  var supabaseAnonKey = typeof SUPABASE_ANON_KEY !== 'undefined'
-    ? SUPABASE_ANON_KEY
-    : 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind1aHRmZXB0ZHJiZGxtbnh0dW1vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyMDY0MjUsImV4cCI6MjA5MDc4MjQyNX0.ixbiKjiUkp5pXIOZdGjGKm17oHtI_GzL8qf1G0TdYU4'
+  var supabaseAnonKey =
+    typeof SUPABASE_ANON_KEY !== 'undefined' ? SUPABASE_ANON_KEY : ''
 
   function generateUUID() {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-      var r = (Math.random() * 16) | 0
-      var v = c === 'x' ? r : (r & 0x3) | 0x8
-      return v.toString(16)
-    })
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID()
+    }
+    if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+      var bytes = new Uint8Array(16)
+      crypto.getRandomValues(bytes)
+      bytes[6] = (bytes[6] & 0x0f) | 0x40
+      bytes[8] = (bytes[8] & 0x3f) | 0x80
+      return Array.from(bytes, function (byte, index) {
+        var hex = byte.toString(16).padStart(2, '0')
+        return [4, 6, 8, 10].indexOf(index) !== -1 ? '-' + hex : hex
+      }).join('')
+    }
+    return null
   }
 
   /** Matches LogicTester: range needs min and/or max column populated to count as “has data”. */
@@ -147,6 +156,10 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
         console.warn('ProviderMatcher: Missing data-widget-id')
         return
       }
+      if (!supabaseBaseUrl || !supabaseAnonKey || !this.state.sessionId) {
+        console.warn('ProviderMatcher: Secure runtime configuration is unavailable')
+        return
+      }
       var self = this
       this.fetchData().then(function () {
         if (self.data) {
@@ -162,7 +175,8 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
     fetchData: async function () {
       try {
         var response = await fetch(
-          supabaseBaseUrl + '/functions/v1/widget-data?id=' + this.widgetId,
+          supabaseBaseUrl + '/functions/v1/widget-data?id=' + encodeURIComponent(this.widgetId) +
+            '&session_id=' + encodeURIComponent(this.state.sessionId),
           // NOTE: send only Authorization (no apikey). The widget-data function's
           // CORS allowlist is "Content-Type, Authorization" — adding apikey makes
           // the browser preflight fail with "Failed to fetch".
@@ -178,7 +192,11 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
 
     checkDomain: function () {
       var domains = (this.data && this.data.config && this.data.config.allowed_domains) || []
-      if (!domains.length) return
+      if (!domains.length) {
+        console.warn('ProviderMatcher: No approved domains are configured')
+        this.data = null
+        return
+      }
       var host = window.location.hostname.toLowerCase()
       var allowed = domains.some(function (d) {
         // Normalize entries so pasted URLs work: strip scheme, path, and port.
@@ -259,18 +277,35 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
     },
 
     injectStyles: function () {
-      var primaryColor = (this.data.config && this.data.config.primary_color) || '#3B82F6'
+      // Matches WidgetBuilderPage's own default so this fallback (only hit if
+      // the server payload is missing primary_color) passes AA contrast too
+      // — the old #3B82F6 fallback cleared neither white nor dark text.
+      var primaryColor = (this.data.config && this.data.config.primary_color) || '#4F46E5'
+      // Text/icon color is derived from the actual configured background
+      // rather than hardcoded, so a light/pastel brand color still clears
+      // WCAG AA contrast for every surface using the configurable brand color.
+      var brandTextColor = readableTextColor(primaryColor)
       var style = document.createElement('style')
       style.textContent = [
         '*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}',
         '.pm-btn{display:flex;align-items:center;gap:10px;background:' +
           primaryColor +
-          ';color:white;border:none;border-radius:50px;padding:12px 22px;font-size:15px;font-weight:600;cursor:pointer;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,0.2);text-align:left;}',
+          ';color:' +
+          brandTextColor +
+          ';border:none;border-radius:50px;padding:12px 22px;font-size:15px;font-weight:600;cursor:pointer;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,0.2);text-align:left;}',
         '.pm-btn-icon{flex-shrink:0;display:flex;align-items:center;justify-content:center;width:26px;height:26px;font-size:18px;line-height:1;}',
         '.pm-btn-icon img{width:26px;height:26px;border-radius:50%;object-fit:cover;display:block;}',
         '.pm-btn-text{display:flex;flex-direction:column;align-items:center;text-align:center;line-height:1.3;}',
-        '.pm-btn-sub{font-size:11px;font-weight:500;opacity:0.85;margin-top:1px;}',
-        '@keyframes pm-btn-enter{0%{opacity:0;transform:translateY(8px) scale(0.94);}100%{opacity:1;transform:translateY(0) scale(1);}}',
+        // No opacity dimming here: opacity blends the text against the
+        // button's own background, which would silently cut back below
+        // 4.5:1 even after brandTextColor is chosen to clear it exactly.
+        // Font-size/weight alone give it a secondary look.
+        '.pm-btn-sub{font-size:11px;font-weight:500;margin-top:1px;}',
+        // Only transform animates here, never opacity: opacity would fade
+        // the button's colors toward the page background mid-animation,
+        // so early frames could dip under 4.5:1 even though the resting
+        // state (computed above) passes.
+        '@keyframes pm-btn-enter{0%{transform:translateY(8px) scale(0.94);}100%{transform:translateY(0) scale(1);}}',
         '.pm-btn-enter{animation:pm-btn-enter 0.35s ease-out;}',
         '@keyframes pm-shake{10%,90%{transform:translateX(-1px);}20%,80%{transform:translateX(2px);}30%,50%,70%{transform:translateX(-3px);}40%,60%{transform:translateX(3px);}}',
         '@keyframes pm-wobble{0%{transform:rotate(0);}15%{transform:rotate(-3deg);}30%{transform:rotate(2.5deg);}45%{transform:rotate(-2deg);}60%{transform:rotate(1.5deg);}75%{transform:rotate(-1deg);}100%{transform:rotate(0);}}',
@@ -283,13 +318,13 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
         '.pm-chat{width:380px;max-height:85vh;background:white;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.15);display:flex;flex-direction:column;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;}',
         '.pm-header{background:' +
           primaryColor +
-          ';color:white;padding:16px;display:flex;justify-content:space-between;align-items:center;font-weight:600;font-size:15px;}',
-        '.pm-close{background:none;border:none;color:white;font-size:22px;cursor:pointer;line-height:1;padding:0;font-family:inherit;}',
+          ';color:' + brandTextColor + ';padding:16px;display:flex;justify-content:space-between;align-items:center;font-weight:600;font-size:15px;}',
+        '.pm-close{background:none;border:none;color:' + brandTextColor + ';font-size:22px;cursor:pointer;line-height:1;padding:0;font-family:inherit;}',
         '.pm-body{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;display:flex;flex-direction:column;gap:10px;}',
         '.pm-bubble{background:#f1f5f9;border-radius:12px 12px 12px 4px;padding:12px 16px;font-size:14px;line-height:1.5;color:#1e293b;max-width:85%;}',
         '.pm-user-bubble{background:' +
           primaryColor +
-          ';color:white;border-radius:12px 12px 4px 12px;padding:10px 14px;font-size:14px;align-self:flex-end;max-width:75%;}',
+          ';color:' + brandTextColor + ';border-radius:12px 12px 4px 12px;padding:10px 14px;font-size:14px;align-self:flex-end;max-width:75%;}',
         '.pm-subtext{font-size:12px;color:#64748b;}',
         '.pm-options{display:flex;flex-direction:column;gap:8px;}',
         '.pm-option{background:white;border:2px solid ' +
@@ -297,13 +332,13 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
           ';color:' +
           primaryColor +
           ';border-radius:10px;padding:11px 16px;font-size:14px;font-weight:500;cursor:pointer;text-align:left;font-family:inherit;}',
-        '.pm-option:hover{background:' + primaryColor + ';color:white;}',
+        '.pm-option:hover{background:' + primaryColor + ';color:' + brandTextColor + ';}',
         '.pm-number-wrap{display:flex;gap:8px;}',
         '.pm-number-input{flex:1;padding:10px 14px;border:2px solid #e2e8f0;border-radius:10px;font-size:16px;font-family:inherit;}',
         '.pm-number-input:focus{outline:none;border-color:' + primaryColor + ';}',
         '.pm-next-btn{background:' +
           primaryColor +
-          ';color:white;border:none;border-radius:10px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;}',
+          ';color:' + brandTextColor + ';border:none;border-radius:10px;padding:10px 18px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;}',
         '.pm-back-btn{background:none;border:none;color:#64748b;font-size:13px;cursor:pointer;padding:0;font-family:inherit;text-decoration:underline;align-self:flex-start;}',
         '.pm-select{width:100%;padding:10px 14px;border:2px solid #e2e8f0;border-radius:10px;font-size:16px;font-family:inherit;background:white;}',
         '.pm-select:focus{outline:none;border-color:' + primaryColor + ';}',
@@ -312,17 +347,17 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
         '.pm-cat-title{font-weight:600;font-size:14px;color:#1e293b;padding:4px 0 2px;}',
         '.pm-card{display:flex;flex-direction:column;background:#f8fafc;border-radius:12px;padding:12px;gap:0;}',
         '.pm-card-outside{background:#fffbeb;border:1px solid #fde68a;}',
-        '.pm-outside-badge{display:inline-block;background:#f59e0b;color:white;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;padding:3px 8px;border-radius:6px;margin-bottom:8px;}',
+        '.pm-outside-badge{display:inline-block;background:#f59e0b;color:#000;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;padding:3px 8px;border-radius:6px;margin-bottom:8px;}',
         '.pm-outside-section{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:8px 10px 2px;margin-top:8px;}',
         '.pm-outside-title{display:flex;align-items:center;gap:6px;font-weight:700;font-size:12px;color:#92400e;text-transform:uppercase;letter-spacing:0.04em;}',
         '.pm-outside-icon{font-size:13px;}',
         '.pm-outside-sub{font-size:12px;color:#92400e;opacity:0.9;padding:4px 0 8px;line-height:1.4;}',
-        '.pm-avatar{width:48px;height:48px;border-radius:50%;object-fit:cover;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;color:white;}',
+        '.pm-avatar{width:48px;height:48px;border-radius:50%;object-fit:cover;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;}',
         '.pm-info{flex:1;min-width:0;}',
         '.pm-name{font-weight:600;font-size:14px;color:#1e293b;}',
         '.pm-sub{font-size:12px;color:#64748b;}',
         '.pm-locs{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}',
-        '.pm-book{background:' + primaryColor + ';color:white;border:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:600;cursor:pointer;text-decoration:none;display:block;width:100%;box-sizing:border-box;text-align:center;font-family:inherit;}',
+        '.pm-book{background:' + primaryColor + ';color:' + brandTextColor + ';border:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:600;cursor:pointer;text-decoration:none;display:block;width:100%;box-sizing:border-box;text-align:center;font-family:inherit;}',
         '.pm-pills{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;}',
         '.pm-cat-pill{background:#eff6ff;color:#1d4ed8;font-size:11px;padding:3px 10px;border-radius:999px;}',
         '.pm-loc-pill{background:#f1f5f9;color:#64748b;font-size:11px;padding:2px 8px;border-radius:999px;border:0.5px solid #e2e8f0;white-space:nowrap;}',
@@ -367,7 +402,7 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
         iconEl.setAttribute('aria-hidden', 'true')
         // A handful of common symbols (☎ ✈ ✂ etc.) render in plain "text"
         // style by default — a colorless glyph that inherits the button's
-        // white text color, effectively invisible on a colored button.
+        // text color, effectively invisible on a colored button.
         // Appending the emoji variation selector (U+FE0F) forces the color
         // "emoji" presentation. It's a no-op for characters (like 👋) that
         // already always render in color.
@@ -510,6 +545,23 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
       body.scrollTop = body.scrollHeight
     },
 
+    appendPrivacyNotice: function (container) {
+      var config = (this.data && this.data.config) || {}
+      if (!config.disclaimer_text || !config.privacy_url) return
+      var disc = document.createElement('div')
+      disc.className = 'pm-disclaimer'
+      var discText = document.createElement('span')
+      discText.textContent = config.disclaimer_text + ' '
+      disc.appendChild(discText)
+      var privacyLink = document.createElement('a')
+      privacyLink.href = config.privacy_url
+      privacyLink.target = '_blank'
+      privacyLink.rel = 'noopener noreferrer'
+      privacyLink.textContent = 'Privacy notice'
+      disc.appendChild(privacyLink)
+      container.appendChild(disc)
+    },
+
     startFlow: function () {
       var body = this.shadow.getElementById('pm-body')
       if (body) body.innerHTML = ''
@@ -525,6 +577,7 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
         this._scrollObserver.disconnect()
         this._scrollObserver = null
       }
+      if (body) this.appendPrivacyNotice(body)
       this.renderQuestion()
     },
 
@@ -645,7 +698,7 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
           self.state.activeOfferings = (self.data.offerings || []).filter(function (o) {
             return o.case_type_id === ct.id
           })
-          self.trackEvent('case_type_selected', null, null, ct.name)
+          self.trackEvent('case_type_selected', null, null, ct.id)
           self.handleAnswer(q, ct.id, ct.name)
         }
         opts.appendChild(btn)
@@ -831,22 +884,10 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
         var opts = document.createElement('div')
         opts.className = 'pm-options'
         if (values.length === 0) {
-          var inp2 = document.createElement('input')
-          inp2.type = 'text'
-          inp2.className = 'pm-number-input'
-          inp2.placeholder = 'Answer'
-          inp2.setAttribute('aria-label', q.question_text || 'Answer')
-          var btn3 = document.createElement('button')
-          btn3.className = 'pm-next-btn'
-          btn3.textContent = 'Next'
-          btn3.onclick = function () {
-            var t = (inp2.value || '').trim()
-            if (!t) return
-            self.state.activeOfferings = filterExact(self.state.activeOfferings, constraint, t)
-            self.handleAnswer(q, t, t)
-          }
-          opts.appendChild(inp2)
-          opts.appendChild(btn3)
+          // Exact-match answers must come from configured offering values. A
+          // free-text fallback can collect names or other identifiers and can
+          // never match safely when no controlled values exist.
+          throw new Error('Exact-match question has no controlled answer values')
         } else {
           values.forEach(function (v) {
             var btn4 = document.createElement('button')
@@ -871,7 +912,7 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
       // including the 'provider' (do-you-know-who-you-want) question, which was
       // previously invisible in the log and funnel.
       if (q.question_type !== 'entry') {
-        this.trackEvent('question_answered', this.state.currentQuestionIndex, q.id, q.question_text, displayText)
+        this.trackEvent('question_answered', this.state.currentQuestionIndex, q.id)
       }
       this.state.answers[q.id] = value
       if (this.state.activeOfferings.length === 0) {
@@ -1094,7 +1135,7 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
       // a render error can never prevent the log from recording results were shown.
       // answer_text distinguishes the guided "matched" list from the "browse all"
       // list users reach by answering Yes to the preferred-provider question.
-      this.trackEvent('results_shown', null, null, null, this.state.bypassMode ? 'browse_all' : 'matched')
+      this.trackEvent('results_shown', null, null, this.state.bypassMode ? 'browse_all' : 'matched')
       this.trackSession(false)
       var body = this.shadow.getElementById('pm-body')
       if (!body) return
@@ -1231,12 +1272,7 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
           })
         }
       }
-      if (config.disclaimer_text) {
-        var disc = document.createElement('div')
-        disc.className = 'pm-disclaimer'
-        disc.textContent = config.disclaimer_text
-        results.appendChild(disc)
-      }
+      this.appendPrivacyNotice(results)
       var restartBtn = document.createElement('button')
       restartBtn.className = 'pm-restart'
       restartBtn.textContent = 'Start Over'
@@ -1354,7 +1390,9 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
         // look identical here and in the app.
         avatar = document.createElement('div')
         avatar.className = 'pm-avatar'
-        avatar.style.background = AVATAR_COLORS[avatarColorIndex(provider.name)].hex
+        var avatarBackground = AVATAR_COLORS[avatarColorIndex(provider.name)].hex
+        avatar.style.background = avatarBackground
+        avatar.style.color = readableTextColor(avatarBackground)
         avatar.textContent = initialsForName(provider.name)
       }
 
@@ -1651,6 +1689,9 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
     // a lost tracking call should never be invisible.
     postTracking: function (payload, label) {
       var url = SUPABASE_URL + '/functions/v1/track-session'
+      payload.session_token = this.data && this.data.config
+        ? this.data.config.session_token
+        : null
       var opts = {
         method: 'POST',
         keepalive: true,
@@ -1674,27 +1715,26 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
       return attempt(1)
     },
 
-    trackEvent: function (eventType, stepIndex, questionId, questionText, answerText) {
-      var config = (this.data && this.data.config) || {}
+    trackEvent: function (eventType, stepIndex, questionId, answerCode) {
       return this.postTracking({
         type: 'event',
         session_id: this.state.sessionId,
         widget_id: this.widgetId,
-        org_id: config.org_id || null,
         event_type: eventType,
         step_index: stepIndex != null ? stepIndex : null,
         question_id: questionId != null ? questionId : null,
-        question_text: questionText != null ? questionText : null,
-        answer_text: answerText != null ? answerText : null,
+        // Only structural ids and fixed operational codes cross the network.
+        // Readable prompts/answers remain in the browser.
+        answer_code: answerCode != null ? answerCode : null,
       }, 'event:' + eventType)
     },
 
     trackSession: function (zeroResults) {
       return this.postTracking({
+        type: 'session',
         widget_id: this.widgetId,
         session_id: this.state.sessionId,
         case_type_id: this.state.selectedCaseTypeId,
-        answers: this.state.answers,
         results_count: this.state.activeOfferings.length,
         providers_shown: Array.from(new Set(this.state.activeOfferings.map(function (o) { return o.provider_id }).filter(Boolean))),
         zero_results: zeroResults,
@@ -1778,7 +1818,7 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
     this.degraded = true
 
     try {
-      this.trackEvent('widget_error', null, null, label, null)
+      this.trackEvent('widget_error')
     } catch (e) {
       /* tracking must never mask the original failure */
     }
@@ -1812,7 +1852,7 @@ import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../src/shar
   // every flow method including ones added later.
   ;[
     'checkDomain', 'injectWidget', 'injectStyles', 'createFloatingButton',
-    'createChatContainer', 'resetState', 'addBubble', 'startFlow', 'open',
+    'createChatContainer', 'resetState', 'addBubble', 'appendPrivacyNotice', 'startFlow', 'open',
     'getQuestionSequence', 'findConstraint', 'renderQuestion', 'renderCaseTypes',
     'renderLocationSelect', 'renderProviderChoice', 'renderBinary', 'renderRange',
     'renderExact', 'handleAnswer', 'goBack', 'showZeroResults', 'showResults',

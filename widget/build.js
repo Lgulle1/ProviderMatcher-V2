@@ -1,8 +1,16 @@
 const esbuild = require('esbuild')
 const isProd = process.env.NODE_ENV === 'production'
 
-/** Set SUPABASE_URL to your project URL (e.g. https://xyzcompany.supabase.co) for production builds. */
-const supabaseProjectUrl = process.env.SUPABASE_URL || 'https://wuhtfeptdrbdlmnxtumo.supabase.co'
+/** Public browser configuration is injected by the protected build workflow. */
+const supabaseProjectUrl = process.env.SUPABASE_URL || (isProd ? '' : 'https://example.invalid')
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || (isProd ? '' : 'development-placeholder')
+
+if (!supabaseProjectUrl || !supabaseAnonKey) {
+  throw new Error('Production widget builds require SUPABASE_URL and SUPABASE_ANON_KEY')
+}
+if (isProd && !/^https:\/\/[a-z0-9.-]+$/i.test(supabaseProjectUrl)) {
+  throw new Error('SUPABASE_URL must be an absolute HTTPS origin')
+}
 
 esbuild
   .build({
@@ -14,6 +22,7 @@ esbuild
     globalName: 'ProviderMatcherWidget',
     define: {
       SUPABASE_URL: JSON.stringify(supabaseProjectUrl),
+      SUPABASE_ANON_KEY: JSON.stringify(supabaseAnonKey),
     },
   })
   .then(() => {
