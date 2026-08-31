@@ -8,6 +8,7 @@ import { useToast } from '../../components/ui/toastStore'
 import { getProviders, createProvider } from '../../lib/api/providers'
 import { supabase } from '../../lib/supabase'
 import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../shared/avatarPalette'
+import { readableTextColor } from '../../shared/colorContrast'
 import { useAuthStore } from '../../stores/authStore'
 import type { Category } from '../../types/database'
 
@@ -194,7 +195,8 @@ export default function ProvidersPage() {
                     />
                   ) : (
                     <div
-                      className={`flex h-20 w-20 items-center justify-center rounded-full text-xl font-bold text-white ${avatarColor.tw}`}
+                      className={`flex h-20 w-20 items-center justify-center rounded-full text-xl font-bold ${avatarColor.tw}`}
+                      style={{ color: readableTextColor(avatarColor.hex) }}
                     >
                       {initials}
                     </div>

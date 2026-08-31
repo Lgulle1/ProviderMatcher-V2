@@ -50,7 +50,7 @@ interface WidgetSession {
 interface WidgetRef { id: string; name: string; status: string }
 interface CaseTypeRef { id: string; name: string }
 interface ProviderRef { id: string; name: string }
-interface QuestionRef { id: string; question_type: string }
+interface QuestionRef { id: string; question_type: string; question_text: string }
 
 interface AnalyticsData {
   events: SessionEvent[]
@@ -67,15 +67,26 @@ interface AnalyticsData {
 // result set in chunks to avoid silently loading only the newest 1,000 rows.
 const PAGE_SIZE = 1000
 
-async function fetchAllRows<T>(table: string, orgId: string, columns = '*'): Promise<T[]> {
+async function fetchAllRows<T>(
+  table: string,
+  orgId: string,
+  columns = '*',
+  dateStart?: string,
+  dateEnd?: string,
+  widgetId?: string,
+): Promise<T[]> {
   const rows: T[] = []
   for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await supabase
+    let query = supabase
       .from(table)
       .select(columns)
       .eq('org_id', orgId)
       .order('created_at', { ascending: false })
       .range(from, from + PAGE_SIZE - 1)
+    if (dateStart) query = query.gte('created_at', dateStart)
+    if (dateEnd) query = query.lte('created_at', dateEnd)
+    if (widgetId && widgetId !== 'all') query = query.eq('widget_id', widgetId)
+    const { data, error } = await query
     if (error) throw new Error(error.message)
     const batch = (data ?? []) as T[]
     rows.push(...batch)
@@ -84,14 +95,19 @@ async function fetchAllRows<T>(table: string, orgId: string, columns = '*'): Pro
   return rows
 }
 
-async function fetchAnalyticsData(orgId: string): Promise<AnalyticsData> {
+async function fetchAnalyticsData(
+  orgId: string,
+  dateStart?: string,
+  dateEnd?: string,
+  widgetId?: string,
+): Promise<AnalyticsData> {
   const [events, sessions, widgetsRes, caseTypesRes, providersRes, questionsRes] = await Promise.all([
-    fetchAllRows<SessionEvent>('widget_session_events', orgId),
-    fetchAllRows<WidgetSession>('widget_sessions', orgId),
+    fetchAllRows<SessionEvent>('widget_session_events', orgId, '*', dateStart, dateEnd, widgetId),
+    fetchAllRows<WidgetSession>('widget_sessions', orgId, '*', dateStart, dateEnd, widgetId),
     supabase.from('widgets').select('id, name, status').eq('org_id', orgId).neq('status', 'archived'),
     supabase.from('case_types').select('id, name').eq('org_id', orgId),
     supabase.from('providers').select('id, name').eq('org_id', orgId),
-    supabase.from('questions').select('id, question_type').eq('org_id', orgId).eq('is_archived', false),
+    supabase.from('questions').select('id, question_type, question_text').eq('org_id', orgId).eq('is_archived', false),
   ])
   return {
     events,
@@ -331,12 +347,6 @@ export default function AnalyticsPage() {
   const [showAllProviders, setShowAllProviders] = useState(false)
   const [showAllImpressions, setShowAllImpressions] = useState(false)
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['analytics-v2', orgId],
-    queryFn: () => fetchAnalyticsData(orgId),
-    enabled: Boolean(orgId),
-  })
-
   // ── Date bounds
   const { dateStart, dateEnd } = useMemo(() => {
     const now = new Date()
@@ -354,14 +364,43 @@ export default function AnalyticsPage() {
     return { dateStart: s, dateEnd: null as Date | null }
   }, [datePreset, customStart, customEnd])
 
-  // ── Filtered events & sessions
+  const { data, isLoading, error } = useQuery({
+    queryKey: [
+      'analytics-v2',
+      orgId,
+      selectedWidgetId,
+      dateStart?.toISOString() ?? null,
+      dateEnd?.toISOString() ?? null,
+    ],
+    queryFn: () => fetchAnalyticsData(
+      orgId,
+      dateStart?.toISOString(),
+      dateEnd?.toISOString(),
+      selectedWidgetId,
+    ),
+    enabled: Boolean(orgId) && (datePreset !== 'custom' || Boolean(dateStart)),
+  })
+
+  const questionNameById = useMemo(() => {
+    const m = new Map<string, string>()
+    data?.questions.forEach(question => m.set(question.id, question.question_text))
+    return m
+  }, [data?.questions])
+
+  // ── Filtered events & sessions. New events store question ids rather than
+  // duplicating readable prompt text; resolve labels from current config.
   const filteredEvents = useMemo(() => {
     let evs = data?.events ?? []
     if (selectedWidgetId !== 'all') evs = evs.filter(e => e.widget_id === selectedWidgetId)
     if (dateStart) evs = evs.filter(e => new Date(e.created_at) >= dateStart)
     if (dateEnd) evs = evs.filter(e => new Date(e.created_at) <= dateEnd)
-    return evs
-  }, [data?.events, selectedWidgetId, dateStart, dateEnd])
+    return evs.map(event => ({
+      ...event,
+      question_text: event.question_id
+        ? (questionNameById.get(event.question_id) ?? event.question_text)
+        : event.question_text,
+    }))
+  }, [data?.events, selectedWidgetId, dateStart, dateEnd, questionNameById])
 
   const filteredSessions = useMemo(() => {
     let sess = data?.sessions ?? []
@@ -411,7 +450,7 @@ export default function AnalyticsPage() {
       zeroResults,
       conversionRate: opens > 0 ? Math.round((ctas / opens) * 100) : 0,
     }
-  }, [filteredEvents, filteredSessions])
+  }, [filteredEvents, dedupedSessions])
 
   // ── No Results Pipeline (must be before funnelSteps)
   const noResultsPipeline = useMemo(() => {
@@ -489,7 +528,7 @@ export default function AnalyticsPage() {
     }
 
     return steps
-  }, [filteredEvents, filteredSessions, funnelMode, noResultsPipeline])
+  }, [filteredEvents, funnelMode, noResultsPipeline])
 
   // ── Sessions over time
   const sessionsOverTime = useMemo(() => {
@@ -768,7 +807,13 @@ export default function AnalyticsPage() {
       const stepMap = new Map<number, SessionEvent>()
       stepEvents.forEach(e => stepMap.set(e.step_index!, e))
       const caseTypeSyntheticEvent: SessionEvent | null = caseTypeEvent
-        ? { ...caseTypeEvent, question_text: 'Case Type', answer_text: caseTypeEvent.question_text }
+        ? {
+            ...caseTypeEvent,
+            question_text: 'Case Type',
+            answer_text: caseTypeEvent.answer_text
+              ? (caseTypeNameById.get(caseTypeEvent.answer_text) ?? caseTypeEvent.answer_text)
+              : null,
+          }
         : null
       const questionFlow = [
         ...(caseTypeSyntheticEvent ? [caseTypeSyntheticEvent] : []),
@@ -823,7 +868,9 @@ export default function AnalyticsPage() {
         const caseTypeEvent = sortedEvents.find(e => e.event_type === 'case_type_selected')
         const caseTypeName = d.session?.case_type_id
           ? (caseTypeNameById.get(d.session.case_type_id) ?? 'Unknown')
-          : (caseTypeEvent?.question_text ?? '—')
+          : (caseTypeEvent?.answer_text
+              ? (caseTypeNameById.get(caseTypeEvent.answer_text) ?? 'Unknown')
+              : '—')
 
         const booked = sortedEvents.some(e => e.event_type === 'booking_clicked')
         const called = sortedEvents.some(e => e.event_type === 'call_clicked' || e.event_type === 'call_office_clicked')

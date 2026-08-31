@@ -28,6 +28,9 @@ import { getProviders } from '../../lib/api/providers'
 import { getQuestions } from '../../lib/api/questions'
 import { getWidget, publishWidget, unpublishWidget, updateWidget, uploadWidgetIcon } from '../../lib/api/widgets'
 import { reconcileQuestionOrder } from '../../lib/widgetConfig'
+import { approvedHttpsUrl } from '../../lib/approvedUrl'
+import { normalizeApprovedDomain } from '../../lib/approvedDomain'
+import { readableTextColor } from '../../shared/colorContrast'
 import { useAuthStore } from '../../stores/authStore'
 import type { Question, Widget } from '../../types/database'
 
@@ -140,7 +143,8 @@ function SortableScopedQuestion({
 
 export default function WidgetBuilderPage() {
   const { id } = useParams<{ id: string }>()
-  const orgId = useAuthStore((s) => s.org?.id ?? '')
+  const organization = useAuthStore((s) => s.org)
+  const orgId = organization?.id ?? ''
   const queryClient = useQueryClient()
   const { toast: toastApi } = useToast()
 
@@ -349,6 +353,7 @@ export default function WidgetBuilderPage() {
 
   const status = config.status ?? widget?.status ?? 'draft'
   const primaryColor = config.primary_color ?? widget?.primary_color ?? '#4F46E5'
+  const brandTextColor = readableTextColor(primaryColor)
   const greeting = (config.greeting_text ?? widget?.greeting_text ?? '').trim() || 'Find a Provider'
   const buttonText = (config.button_text ?? widget?.button_text ?? '').trim() || 'Find a Provider'
   const buttonSubtext = (config.button_subtext ?? widget?.button_subtext ?? '').trim()
@@ -366,8 +371,9 @@ export default function WidgetBuilderPage() {
   const reqEntryOk = Boolean(entryQuestion)
   const allRequirementsMet = reqProvidersOk && reqCaseTypesOk && reqEntryOk
 
-  const embedScript = id
-    ? `<script src="https://lgulle1.github.io/ProviderMatcher-V2/widget.js" data-widget-id="${id}"></script>`
+  const widgetScriptUrl = approvedHttpsUrl(import.meta.env.VITE_WIDGET_SCRIPT_URL)
+  const embedScript = id && widgetScriptUrl
+    ? `<script src="${widgetScriptUrl}" data-widget-id="${id}"></script>`
     : ''
 
   async function handleIconUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -407,6 +413,20 @@ export default function WidgetBuilderPage() {
     if (!id) {
       return
     }
+    if (!organization?.allowed_domains?.some(normalizeApprovedDomain)) {
+      toastApi.error('Add at least one approved website domain in Settings before publishing')
+      return
+    }
+    const disclaimerText = (config.disclaimer_text ?? widget?.disclaimer_text ?? '').trim()
+    if (!disclaimerText) {
+      toastApi.error('Add the required privacy disclaimer before publishing')
+      return
+    }
+    const privacyUrl = approvedHttpsUrl(config.privacy_url ?? widget?.privacy_url)
+    if (!privacyUrl) {
+      toastApi.error('Add an absolute HTTPS privacy notice URL before publishing')
+      return
+    }
     setActionLoading(true)
     const entryQuestionId = questions.find((q) => q.question_type === 'entry')?.id
     const scopedQuestionIdsBase = config.scoped_question_ids ?? []
@@ -423,7 +443,8 @@ export default function WidgetBuilderPage() {
       primary_color: config.primary_color ?? widget?.primary_color ?? '#4F46E5',
       button_text: config.button_text ?? widget?.button_text ?? 'Find a Provider',
       greeting_text: config.greeting_text ?? widget?.greeting_text ?? '',
-      disclaimer_text: config.disclaimer_text ?? widget?.disclaimer_text ?? null,
+      disclaimer_text: disclaimerText,
+      privacy_url: privacyUrl,
       embed_mode: config.embed_mode ?? widget?.embed_mode ?? 'floating',
       show_worth_the_drive: config.show_worth_the_drive ?? widget?.show_worth_the_drive ?? true,
       open_delay_enabled: config.open_delay_enabled ?? widget?.open_delay_enabled ?? false,
@@ -1108,7 +1129,7 @@ export default function WidgetBuilderPage() {
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Disclaimer Text (optional)</label>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">Privacy Disclaimer (required)</label>
                   <textarea
                     rows={2}
                     value={config.disclaimer_text ?? widget.disclaimer_text ?? ''}
@@ -1118,6 +1139,21 @@ export default function WidgetBuilderPage() {
                         disclaimer_text: e.target.value || null,
                       }))
                     }
+                    className="w-full max-w-lg rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  />
+                  <p className="mt-1 max-w-lg text-xs text-slate-500">
+                    Explain how answers are used; the approved notice is linked separately below.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">Privacy Notice URL (required)</label>
+                  <input
+                    type="url"
+                    inputMode="url"
+                    placeholder="https://www.example.com/privacy"
+                    value={config.privacy_url ?? widget.privacy_url ?? ''}
+                    onChange={(e) => setConfig((c) => ({ ...c, privacy_url: e.target.value || null }))}
                     className="w-full max-w-lg rounded-lg border border-slate-300 px-3 py-2 text-sm"
                   />
                 </div>
@@ -1215,9 +1251,15 @@ export default function WidgetBuilderPage() {
                 </>
               ) : (
                 <>
-                  <pre className="mb-3 overflow-x-auto rounded-xl bg-slate-900 p-4 font-mono text-sm text-green-400">
-                    {embedScript}
-                  </pre>
+                  {embedScript ? (
+                    <pre className="mb-3 overflow-x-auto rounded-xl bg-slate-900 p-4 font-mono text-sm text-green-400">
+                      {embedScript}
+                    </pre>
+                  ) : (
+                    <div className="mb-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                      Widget delivery is not configured. Set VITE_WIDGET_SCRIPT_URL to the approved company-owned HTTPS asset URL.
+                    </div>
+                  )}
                   <button
                     type="button"
                     onClick={() => void copyEmbedCode()}
@@ -1270,10 +1312,10 @@ export default function WidgetBuilderPage() {
               <button
                 type="button"
                 className={[
-                  'absolute bottom-4 right-4 flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium text-white shadow-lg',
+                  'absolute bottom-4 right-4 flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium shadow-lg',
                   buttonAnimation !== 'none' ? `pmp-anim-${buttonAnimation}` : '',
                 ].join(' ')}
-                style={{ backgroundColor: primaryColor }}
+                style={{ backgroundColor: primaryColor, color: brandTextColor }}
               >
                 {buttonIconType === 'emoji' && buttonIconValue ? (
                   <span aria-hidden className="text-lg leading-none">
@@ -1286,7 +1328,7 @@ export default function WidgetBuilderPage() {
                 <span className="flex flex-col items-center text-center leading-tight">
                   <span>{buttonText}</span>
                   {buttonSubtext ? (
-                    <span className="text-[11px] font-medium opacity-85">{buttonSubtext}</span>
+                    <span className="text-[11px] font-medium">{buttonSubtext}</span>
                   ) : null}
                 </span>
               </button>
@@ -1294,8 +1336,8 @@ export default function WidgetBuilderPage() {
           ) : (
             <div className="m-4 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
               <div
-                className="px-4 py-3 text-sm font-semibold text-white"
-                style={{ backgroundColor: primaryColor }}
+                className="px-4 py-3 text-sm font-semibold"
+                style={{ backgroundColor: primaryColor, color: brandTextColor }}
               >
                 {greeting}
               </div>

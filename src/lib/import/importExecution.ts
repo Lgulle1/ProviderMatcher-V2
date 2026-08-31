@@ -1,12 +1,8 @@
-import { createCaseType } from '../api/caseTypes'
-import { createCategory } from '../api/categories'
-import { createProvider } from '../api/providers'
-import { updateProviderCategories } from '../api/dataTable'
 import { fuzzyMatch, normalizeName } from '../parsers/nameNormalizer'
 import { supabase } from '../supabase'
 import type { CaseType, Category, Constraint, Provider } from '../../types/database'
 
-/** Subset of wizard column mapping; kept here to avoid circular imports with the wizard component. */
+/** Subset of wizard column mapping; kept here to avoid circular imports. */
 export interface ImportColumnMapping {
   excelHeader: string
   role: string
@@ -24,25 +20,6 @@ export interface ConflictItem {
   similarity?: number
 }
 
-function normLookupKey(val: string): string {
-  return val.trim().toLowerCase()
-}
-
-function splitCategoryCell(value: string): string[] {
-  return value
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
-}
-
-function toTitleCase(value: string): string {
-  return value
-    .toLowerCase()
-    .split(/\s+/)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ')
-}
-
 export function detectConflicts(
   rows: Record<string, string>[],
   providerHeader: string,
@@ -52,46 +29,33 @@ export function detectConflicts(
 
   rows.forEach((row, rowIndex) => {
     const raw = (row[providerHeader] ?? '').trim()
-    if (!raw) {
-      return
-    }
+    if (!raw) return
     const incomingNorm = normalizeName(raw)
 
-    let exactMatch: Provider | null = null
-    for (const p of existingProviders) {
-      const en = (p.normalized_name ?? normalizeName(p.name)).trim()
-      if (incomingNorm === en) {
-        exactMatch = p
-        break
-      }
-    }
-
+    const exactMatch = existingProviders.find((provider) => {
+      const existing = (provider.normalized_name ?? normalizeName(provider.name)).trim()
+      return incomingNorm === existing
+    })
     if (exactMatch) {
-      conflicts.push({
-        rowIndex,
-        incomingName: raw,
-        existingProvider: exactMatch,
-        matchType: 'exact',
-      })
+      conflicts.push({ rowIndex, incomingName: raw, existingProvider: exactMatch, matchType: 'exact' })
       return
     }
 
-    let bestP: Provider | null = null
+    let bestProvider: Provider | null = null
     let bestScore = 0
-    for (const p of existingProviders) {
-      const en = (p.normalized_name ?? normalizeName(p.name)).trim()
-      const score = fuzzyMatch(incomingNorm, en)
+    for (const provider of existingProviders) {
+      const existing = (provider.normalized_name ?? normalizeName(provider.name)).trim()
+      const score = fuzzyMatch(incomingNorm, existing)
       if (score > bestScore) {
         bestScore = score
-        bestP = p
+        bestProvider = provider
       }
     }
-
-    if (bestP && bestScore > 0.85) {
+    if (bestProvider && bestScore > 0.85) {
       conflicts.push({
         rowIndex,
         incomingName: raw,
-        existingProvider: bestP,
+        existingProvider: bestProvider,
         matchType: 'fuzzy',
         similarity: bestScore,
       })
@@ -101,24 +65,9 @@ export function detectConflicts(
   return conflicts
 }
 
-function cellVal(row: Record<string, string>, header: string | undefined): string {
-  if (!header) {
-    return ''
-  }
-  return (row[header] ?? '').trim()
-}
-
-function isTruthyBinary(val: string): boolean {
-  const v = val.toLowerCase()
-  return v === '1' || v === 'true' || v === 'yes' || v === 'y'
-}
-
-function isStrictBinaryOk(val: string): boolean {
-  if (val === '') {
-    return true
-  }
-  const v = val.toLowerCase()
-  return v === '0' || v === '1' || v === 'true' || v === 'false' || v === 'yes' || v === 'no' || v === 'y' || v === 'n'
+function isStrictBinaryOk(value: string): boolean {
+  if (value === '') return true
+  return ['0', '1', 'true', 'false', 'yes', 'no', 'y', 'n'].includes(value.toLowerCase())
 }
 
 export { isStrictBinaryOk }
@@ -144,305 +93,38 @@ export interface ExecuteImportResult {
   newCategoriesCount: number
 }
 
+function isImportResult(value: unknown): value is ExecuteImportResult {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const result = value as Record<string, unknown>
+  return [
+    'providersCreated',
+    'providersUpdated',
+    'offeringsUpserted',
+    'newCaseTypesCount',
+    'newCategoriesCount',
+  ].every((key) => Number.isInteger(result[key]) && Number(result[key]) >= 0)
+}
+
+/**
+ * Submit one bounded import plan to PostgreSQL. The RPC derives the tenant from
+ * auth.uid(), validates every referenced id, and performs all writes in the
+ * function's single transaction. No browser-side partial writes remain.
+ */
 export async function executeImportRun(params: ExecuteImportParams): Promise<ExecuteImportResult> {
-  const {
-    orgId,
-    filename,
-    headers,
-    rows,
-    mappings,
-    orgConstraints,
-    orgCaseTypes,
-    orgCategories,
-    conflicts,
-    resolvedConflicts,
-  } = params
-
-  const providerHeader = mappings.find((m) => m.role === 'provider_name')?.excelHeader
-  const caseTypeHeader = mappings.find((m) => m.role === 'case_type')?.excelHeader
-  const categoryHeader = mappings.find((m) => m.role === 'category')?.excelHeader
-
-  const conflictByRow = new Map<number, ConflictItem>()
-  conflicts.forEach((c) => conflictByRow.set(c.rowIndex, c))
-
-  let providersCreated = 0
-  let providersUpdated = 0
-  let offeringsUpserted = 0
-  let newCaseTypesCount = 0
-  let newCategoriesCount = 0
-
-  const caseTypeIdByNorm = new Map<string, string>()
-  const categoryIdByNorm = new Map<string, string>()
-
-  orgCaseTypes.forEach((ct) => caseTypeIdByNorm.set(normLookupKey(ct.name), ct.id))
-  orgCategories.forEach((cat) => categoryIdByNorm.set(normLookupKey(cat.name), cat.id))
-
-  const uniqueCaseValues = new Set<string>()
-  const uniqueCategoryValues = new Set<string>()
-  if (caseTypeHeader) {
-    rows.forEach((row) => {
-      const v = cellVal(row, caseTypeHeader)
-      if (v) {
-        uniqueCaseValues.add(v)
-      }
-    })
-  }
-  if (categoryHeader) {
-    rows.forEach((row) => {
-      const v = cellVal(row, categoryHeader)
-      splitCategoryCell(v).forEach((categoryPart) => uniqueCategoryValues.add(categoryPart))
-    })
+  const payload = {
+    filename: params.filename,
+    headers: params.headers,
+    rows: params.rows,
+    mappings: params.mappings,
+    conflicts: params.conflicts.map((conflict) => ({
+      rowIndex: conflict.rowIndex,
+      existingProviderId: conflict.existingProvider.id,
+    })),
+    resolvedConflicts: params.resolvedConflicts,
   }
 
-  for (const name of uniqueCaseValues) {
-    const nk = normLookupKey(name)
-    if (caseTypeIdByNorm.has(nk)) {
-      continue
-    }
-    const { data, error } = await createCaseType(orgId, toTitleCase(name))
-    if (error || !data) {
-      throw new Error(error ?? 'Failed to create case type')
-    }
-    newCaseTypesCount += 1
-    caseTypeIdByNorm.set(normLookupKey(data.name), data.id)
-  }
-
-  for (const name of uniqueCategoryValues) {
-    const nk = normLookupKey(name)
-    if (categoryIdByNorm.has(nk)) {
-      continue
-    }
-    const { data, error } = await createCategory(orgId, toTitleCase(name))
-    if (error || !data) {
-      throw new Error(error ?? 'Failed to create category')
-    }
-    newCategoriesCount += 1
-    categoryIdByNorm.set(normLookupKey(data.name), data.id)
-  }
-
-  const constraintMappings = mappings.filter((m) => m.role === 'constraint' && m.constraintId)
-  const locationMappings = mappings.filter((m) => m.role === 'location' && m.locationId)
-  const bookingLinkMappings = mappings.filter((m) => m.role === 'booking_link' && m.locationScope)
-  const phoneMappings = mappings.filter((m) => m.role === 'phone' && m.locationScope)
-
-  const constraintById = new Map(orgConstraints.map((c) => [c.id, c]))
-  const importedProviderNameToId: Record<string, string> = {}
-
-  // Categories accumulate across every row touching the same provider.
-  // updateProviderCategories replaces category_ids outright, so without this a
-  // provider spanning several rows -- the ordinary shape of an import file, one
-  // row per case type -- would keep only the last row's categories. Seeded from
-  // the existing record on first touch so a merge does not drop what was
-  // already there.
-  const categoryIdsByProvider = new Map<string, Set<string>>()
-
-  for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
-    const row = rows[rowIndex]
-    if (!providerHeader) {
-      continue
-    }
-
-    const provName = cellVal(row, providerHeader)
-    if (!provName) {
-      continue
-    }
-    const normalizedProvName = normalizeName(provName)
-
-    const conflict = conflictByRow.get(rowIndex)
-    const resolution = conflict ? resolvedConflicts[String(rowIndex)] : undefined
-
-    if (conflict && resolution === 'skip') {
-      continue
-    }
-
-    // No initializer: every branch below assigns before this is read (the
-    // remaining case is `else { continue }`, which exits before it would
-    // be), so TS proves it's always assigned by the time it's used.
-    let providerId: string
-    const isMerge = Boolean(conflict && resolution === 'merge')
-
-    if (importedProviderNameToId[normalizedProvName]) {
-      providerId = importedProviderNameToId[normalizedProvName]
-    } else if (isMerge && conflict) {
-      providerId = conflict.existingProvider.id
-      providersUpdated += 1
-      importedProviderNameToId[normalizedProvName] = providerId
-    } else if (conflict && resolution === 'separate') {
-      const { data, error } = await createProvider({ org_id: orgId, name: provName })
-      if (error || !data) {
-        throw new Error(error ?? 'Failed to create provider')
-      }
-      providerId = data.id
-      providersCreated += 1
-      importedProviderNameToId[normalizedProvName] = providerId
-    } else if (!conflict) {
-      const { data, error } = await createProvider({ org_id: orgId, name: provName })
-      if (error || !data) {
-        throw new Error(error ?? 'Failed to create provider')
-      }
-      providerId = data.id
-      providersCreated += 1
-      importedProviderNameToId[normalizedProvName] = providerId
-    } else {
-      continue
-    }
-
-    if (!providerId) {
-      continue
-    }
-
-    const caseVal = caseTypeHeader ? cellVal(row, caseTypeHeader) : ''
-    const caseTypeId = caseVal ? caseTypeIdByNorm.get(normLookupKey(caseVal)) : undefined
-    if (!caseTypeId) {
-      continue
-    }
-
-    const constraintsObj: Record<string, unknown> = {}
-
-    for (const cm of constraintMappings) {
-      const c = constraintById.get(cm.constraintId!)
-      if (!c) {
-        continue
-      }
-      const raw = cellVal(row, cm.excelHeader)
-      if (c.type === 'binary') {
-        constraintsObj[c.mapped_key] = raw === '' ? 0 : isTruthyBinary(raw) ? 1 : 0
-      } else if (c.type === 'range') {
-        const num = raw === '' ? NaN : Number(raw)
-        if (cm.rangePosition === 'min') {
-          constraintsObj[c.mapped_key] = Number.isFinite(num) ? num : 0
-        } else if (cm.rangePosition === 'max') {
-          const maxKey = c.secondary_mapped_key
-          if (maxKey) {
-            constraintsObj[maxKey] = Number.isFinite(num) ? num : 999
-          }
-        }
-      } else {
-        constraintsObj[c.mapped_key] = raw === '' ? null : String(raw)
-      }
-    }
-
-    const locationIds: string[] = []
-    for (const lm of locationMappings) {
-      const cell = (row[lm.excelHeader] ?? '').trim()
-      if (lm.locationId && isTruthyBinary(cell)) {
-        locationIds.push(lm.locationId)
-      }
-    }
-
-    for (const locationId of locationIds) {
-      const blMapping = bookingLinkMappings.find(
-        (m) => m.locationScope === locationId || m.locationScope === 'all'
-      )
-      const phoneMapping = phoneMappings.find(
-        (m) => m.locationScope === locationId || m.locationScope === 'all'
-      )
-      const bookingLink = blMapping ? (row[blMapping.excelHeader] ?? '').trim() || null : null
-      const phone = phoneMapping ? (row[phoneMapping.excelHeader] ?? '').trim() || null : null
-
-      await supabase
-        .from('provider_locations')
-        .upsert(
-          { provider_id: providerId, location_id: locationId, booking_link: bookingLink, phone },
-          { onConflict: 'provider_id,location_id' }
-        )
-    }
-
-    const categoryIdsFromRow: string[] = []
-    if (categoryHeader) {
-      const catVal = cellVal(row, categoryHeader)
-      const categoryParts = splitCategoryCell(catVal)
-      for (const categoryPart of categoryParts) {
-        const cid = categoryIdByNorm.get(normLookupKey(categoryPart))
-        if (cid) {
-          categoryIdsFromRow.push(cid)
-        }
-      }
-    }
-
-    if (categoryIdsFromRow.length > 0) {
-      let accumulated = categoryIdsByProvider.get(providerId)
-      if (!accumulated) {
-        const existingCats = isMerge && conflict ? (conflict.existingProvider.category_ids ?? []) : []
-        accumulated = new Set(existingCats)
-        categoryIdsByProvider.set(providerId, accumulated)
-      }
-      categoryIdsFromRow.forEach((categoryId) => accumulated.add(categoryId))
-
-      const { error: catErr } = await updateProviderCategories(providerId, [...accumulated])
-      if (catErr) {
-        throw new Error(catErr)
-      }
-    }
-
-    const { data: existingOffering } = await supabase
-      .from('offerings')
-      .select('id, constraints, location_ids')
-      .eq('provider_id', providerId)
-      .eq('case_type_id', caseTypeId)
-      .eq('org_id', orgId)
-      .eq('is_archived', false)
-      .maybeSingle()
-
-    const prevConstraints = (existingOffering?.constraints as Record<string, unknown>) ?? {}
-    const mergedConstraints = { ...prevConstraints, ...constraintsObj }
-
-    const prevLocs = (existingOffering?.location_ids as string[]) ?? []
-    const mergedLocIds = [...new Set([...prevLocs, ...locationIds])]
-
-    if (existingOffering) {
-      const { error: upErr } = await supabase
-        .from('offerings')
-        .update({
-          location_ids: mergedLocIds,
-          constraints: mergedConstraints,
-        })
-        .eq('id', existingOffering.id)
-
-      if (upErr) {
-        throw new Error(upErr.message)
-      }
-    } else {
-      const { error: insErr } = await supabase.from('offerings').insert({
-        org_id: orgId,
-        provider_id: providerId,
-        case_type_id: caseTypeId,
-        location_ids: locationIds,
-        constraints: mergedConstraints,
-        is_archived: false,
-      })
-
-      if (insErr) {
-        throw new Error(insErr.message)
-      }
-    }
-
-    offeringsUpserted += 1
-  }
-
-  const { error: histErr } = await supabase.from('import_history').insert({
-    org_id: orgId,
-    filename,
-    rows_processed: rows.length,
-    providers_created: providersCreated,
-    providers_updated: providersUpdated,
-    duplicates_detected: conflicts.length,
-    errors: 0,
-    mapping_template: {
-      headers,
-      mappings,
-    },
-  })
-
-  if (histErr) {
-    throw new Error(histErr.message)
-  }
-
-  return {
-    providersCreated,
-    providersUpdated,
-    offeringsUpserted,
-    newCaseTypesCount,
-    newCategoriesCount,
-  }
+  const { data, error } = await supabase.rpc('execute_provider_import', { p_payload: payload })
+  if (error) throw new Error(error.message)
+  if (!isImportResult(data)) throw new Error('Import returned an invalid result')
+  return data
 }

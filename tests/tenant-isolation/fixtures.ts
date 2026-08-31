@@ -390,6 +390,7 @@ async function createTenant(
     org_id: orgId,
     name: `RLS Test User ${label}`,
     email,
+    role: 'owner',
   })
 
   if (userError) {

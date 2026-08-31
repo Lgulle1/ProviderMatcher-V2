@@ -26,6 +26,7 @@ import {
 } from '../../lib/api/offerings'
 import { supabase } from '../../lib/supabase'
 import { AVATAR_COLORS, avatarColorIndex, initialsForName } from '../../shared/avatarPalette'
+import { readableTextColor } from '../../shared/colorContrast'
 import { useAuthStore } from '../../stores/authStore'
 import type {
   CaseType,
@@ -524,7 +525,8 @@ export default function ProviderProfilePage() {
               />
             ) : (
               <div
-                className={`flex h-32 w-32 items-center justify-center rounded-full text-2xl font-bold text-white ${avatarColor.tw}`}
+                className={`flex h-32 w-32 items-center justify-center rounded-full text-2xl font-bold ${avatarColor.tw}`}
+                style={{ color: readableTextColor(avatarColor.hex) }}
               >
                 {initials}
               </div>

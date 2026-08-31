@@ -8,6 +8,30 @@ export interface ParseResult {
   rowCount: number
 }
 
+export const IMPORT_LIMITS = {
+  fileBytes: 10 * 1024 * 1024,
+  rows: 25_000,
+  columns: 250,
+  cellCharacters: 10_000,
+} as const
+
+function enforceImportLimits(result: ParseResult): ParseResult {
+  const errors = [...result.errors]
+  if (result.headers.length > IMPORT_LIMITS.columns) {
+    errors.push(`File has more than ${IMPORT_LIMITS.columns} columns`)
+  }
+  if (result.rows.length > IMPORT_LIMITS.rows) {
+    errors.push(`File has more than ${IMPORT_LIMITS.rows.toLocaleString()} data rows`)
+  }
+  const oversizedCell = result.rows.some((row) =>
+    Object.values(row).some((value) => value.length > IMPORT_LIMITS.cellCharacters),
+  )
+  if (oversizedCell) {
+    errors.push(`A cell exceeds ${IMPORT_LIMITS.cellCharacters.toLocaleString()} characters`)
+  }
+  return errors.length === result.errors.length ? result : { ...result, errors }
+}
+
 function trimValue(value: unknown): string {
   return String(value ?? '').trim()
 }
@@ -132,13 +156,21 @@ async function parseExcel(file: File): Promise<ParseResult> {
 
 export async function parseFile(file: File): Promise<ParseResult> {
   try {
+    if (file.size > IMPORT_LIMITS.fileBytes) {
+      return {
+        headers: [],
+        rows: [],
+        errors: [`File must be ${IMPORT_LIMITS.fileBytes / 1024 / 1024}MB or smaller`],
+        rowCount: 0,
+      }
+    }
     const extension = file.name.split('.').pop()?.toLowerCase()
 
     if (extension === 'csv') {
-      return await parseCSV(file)
+      return enforceImportLimits(await parseCSV(file))
     }
     if (extension === 'xlsx' || extension === 'xls') {
-      return await parseExcel(file)
+      return enforceImportLimits(await parseExcel(file))
     }
 
     return {

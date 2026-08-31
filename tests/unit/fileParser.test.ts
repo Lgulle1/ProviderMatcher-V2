@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as XLSX from 'xlsx'
-import { parseFile } from '../../src/lib/parsers/fileParser'
+import { IMPORT_LIMITS, parseFile } from '../../src/lib/parsers/fileParser'
 
 /**
  * Covers the front door of the import: whatever spreadsheet a tenant uploads.
@@ -59,6 +59,23 @@ describe('parseFile — CSV', () => {
   it('keeps values that look numeric as strings', async () => {
     const result = await parseFile(csvFile('p.csv', 'Provider,Min Age\nDr Smith,0\n'))
     expect(result.rows[0]['Min Age']).toBe('0')
+  })
+
+  it('rejects files and cells that exceed import safety limits', async () => {
+    const oversizedFile = new File(
+      [new Uint8Array(IMPORT_LIMITS.fileBytes + 1)],
+      'oversized.csv',
+      { type: 'text/csv' },
+    )
+    expect((await parseFile(oversizedFile)).errors[0]).toMatch(/mb or smaller/i)
+
+    const oversizedCell = csvFile(
+      'cell.csv',
+      `Provider,Case Type\n${'x'.repeat(IMPORT_LIMITS.cellCharacters + 1)},Knee\n`,
+    )
+    expect((await parseFile(oversizedCell)).errors).toContain(
+      `A cell exceeds ${IMPORT_LIMITS.cellCharacters.toLocaleString()} characters`,
+    )
   })
 })
 

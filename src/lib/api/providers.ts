@@ -1,4 +1,5 @@
 import { supabase } from '../supabase'
+import { validateImageUpload } from '../imageUpload'
 import type { Provider } from '../../types/database'
 import { normalizeName } from '../parsers/nameNormalizer'
 
@@ -80,6 +81,8 @@ export async function uploadProviderImage(
   orgId: string,
   file: File
 ): Promise<{ url: string | null; error: string | null }> {
+  const validationError = validateImageUpload(file)
+  if (validationError) return { url: null, error: validationError }
   const extension = file.name.split('.').pop()?.toLowerCase() ?? 'jpg'
   const path = `${orgId}/${providerId}.${extension}`
 

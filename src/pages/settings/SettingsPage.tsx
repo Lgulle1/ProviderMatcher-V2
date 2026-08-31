@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { supabase } from '../../lib/supabase'
+import { normalizeApprovedDomain } from '../../lib/approvedDomain'
 import { useAuthStore } from '../../stores/authStore'
 import { useToast } from '../../components/ui/toastStore'
-import type { Organization, User } from '../../types/database'
+import type { Organization, OrganizationInvitation, User } from '../../types/database'
 
 type OrgFormValues = {
   name: string
@@ -25,6 +26,13 @@ export default function SettingsPage() {
   const [accountName, setAccountName] = useState('')
   const [accountSaving, setAccountSaving] = useState(false)
   const [orgSaving, setOrgSaving] = useState(false)
+  const [members, setMembers] = useState<User[]>([])
+  const [pendingInvitations, setPendingInvitations] = useState<OrganizationInvitation[]>([])
+  const [teamLoading, setTeamLoading] = useState(false)
+  const [inviteName, setInviteName] = useState('')
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteRole, setInviteRole] = useState<User['role']>('viewer')
+  const [inviteSending, setInviteSending] = useState(false)
 
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -58,6 +66,39 @@ export default function SettingsPage() {
       default_phone_mode: org.default_phone_mode ?? 'simple',
     })
   }, [org, reset])
+
+  const isOwner = user?.role === 'owner'
+
+  const loadTeam = useCallback(async () => {
+    if (!org || !user) return
+    // Keep the effect-triggered refresh asynchronous; state updates occur only
+    // after control returns to the event loop.
+    await Promise.resolve()
+    setTeamLoading(true)
+    const membersQuery = supabase
+      .from('users')
+      .select('*')
+      .eq('org_id', org.id)
+      .order('created_at')
+    const invitationsQuery = isOwner
+      ? supabase
+          .from('organization_invitations')
+          .select('*')
+          .eq('org_id', org.id)
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false })
+      : Promise.resolve({ data: [], error: null })
+    const [membersResult, invitationsResult] = await Promise.all([membersQuery, invitationsQuery])
+    setMembers((membersResult.data ?? []) as User[])
+    setPendingInvitations((invitationsResult.data ?? []) as OrganizationInvitation[])
+    setTeamLoading(false)
+  }, [isOwner, org, user])
+
+  useEffect(() => {
+    // Initial external database synchronization for the team panel.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadTeam()
+  }, [loadTeam])
 
   // Reseed the editable account name whenever the stored user changes, during
   // render rather than in an effect. Comparing the source value (not just the
@@ -105,11 +146,17 @@ export default function SettingsPage() {
     if (!org) {
       return
     }
-    setOrgSaving(true)
-    const allowed_domains = values.allowed_domains_text
+    const domainEntries = values.allowed_domains_text
       .split('\n')
       .map((line) => line.trim())
       .filter(Boolean)
+    const normalizedDomains = domainEntries.map(normalizeApprovedDomain)
+    if (normalizedDomains.some((domain) => !domain) || normalizedDomains.length > 50) {
+      toast.error('Use 1-50 valid full domains such as example.com; wildcards and bare suffixes are not allowed')
+      return
+    }
+    const allowed_domains = Array.from(new Set(normalizedDomains as string[]))
+    setOrgSaving(true)
 
     const { data, error } = await supabase
       .from('organizations')
@@ -140,6 +187,8 @@ export default function SettingsPage() {
       fallback_phone: updated.fallback_phone ?? '',
       fallback_message: updated.fallback_message,
       allowed_domains_text: (updated.allowed_domains ?? []).join('\n'),
+      default_booking_mode: updated.default_booking_mode,
+      default_phone_mode: updated.default_phone_mode,
     })
   })
 
@@ -172,8 +221,8 @@ export default function SettingsPage() {
 
   async function onSavePassword() {
     setPasswordError('')
-    if (newPassword.length < 8) {
-      setPasswordError('Password must be at least 8 characters')
+    if (newPassword.length < 12) {
+      setPasswordError('Password must be at least 12 characters')
       return
     }
     if (newPassword !== confirmPassword) {
@@ -194,6 +243,37 @@ export default function SettingsPage() {
     toast.success('Password updated')
   }
 
+  async function inviteMember() {
+    if (!isOwner || !inviteName.trim() || !inviteEmail.trim()) return
+    setInviteSending(true)
+    const { error } = await supabase.functions.invoke('invite-member', {
+      body: { name: inviteName.trim(), email: inviteEmail.trim(), role: inviteRole },
+    })
+    setInviteSending(false)
+    if (error) {
+      toast.error(error.message)
+      return
+    }
+    setInviteName('')
+    setInviteEmail('')
+    setInviteRole('viewer')
+    await loadTeam()
+    toast.success('Invitation sent')
+  }
+
+  async function changeMemberRole(memberId: string, role: User['role']) {
+    const { error } = await supabase.rpc('set_organization_member_role', {
+      p_user_id: memberId,
+      p_role: role,
+    })
+    if (error) {
+      toast.error(error.message)
+      return
+    }
+    await loadTeam()
+    toast.success('Member role updated')
+  }
+
   if (!org || !user) {
     return <p className="text-sm text-slate-500">Loading settings…</p>
   }
@@ -203,6 +283,7 @@ export default function SettingsPage() {
       <section className="mb-4 rounded-xl border border-slate-200 bg-white p-6">
         <h2 className="mb-6 font-semibold text-slate-900">Organization Settings</h2>
         <form onSubmit={onSaveOrg} className="space-y-5">
+          <fieldset disabled={!isOwner} className="space-y-5 disabled:opacity-60">
           <div>
             <label htmlFor="org-name" className="mb-1 block text-sm font-medium text-slate-700">
               Organization Name
@@ -256,7 +337,7 @@ export default function SettingsPage() {
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
             <p className="mt-1 text-xs text-slate-500">
-              One domain per line. Leave empty to allow all domains.
+              One full domain per line. Live widgets fail closed when this list is empty or invalid.
             </p>
           </div>
 
@@ -295,7 +376,89 @@ export default function SettingsPage() {
           >
             {orgSaving ? 'Saving…' : 'Save Organization Settings'}
           </button>
+          </fieldset>
         </form>
+        {!isOwner ? <p className="mt-3 text-xs text-slate-500">Only an organization owner can change these settings.</p> : null}
+      </section>
+
+      <section className="mb-4 rounded-xl border border-slate-200 bg-white p-6">
+        <div className="mb-5 flex items-center justify-between">
+          <div>
+            <h2 className="font-semibold text-slate-900">Team Access</h2>
+            <p className="mt-1 text-xs text-slate-500">Viewers can read, editors can configure, and owners manage organization access.</p>
+          </div>
+          {teamLoading ? <span className="text-xs text-slate-400">Refreshing…</span> : null}
+        </div>
+
+        <div className="divide-y divide-slate-100 rounded-lg border border-slate-200">
+          {members.map((member) => (
+            <div key={member.id} className="flex items-center justify-between gap-4 p-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-slate-800">{member.name || member.email}</p>
+                <p className="truncate text-xs text-slate-500">{member.email}</p>
+              </div>
+              {isOwner ? (
+                <select
+                  value={member.role}
+                  onChange={(event) => void changeMemberRole(member.id, event.target.value as User['role'])}
+                  className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+                  aria-label={`Role for ${member.email}`}
+                >
+                  <option value="viewer">Viewer</option>
+                  <option value="editor">Editor</option>
+                  <option value="owner">Owner</option>
+                </select>
+              ) : (
+                <span className="rounded-full bg-slate-100 px-2 py-1 text-xs capitalize text-slate-600">{member.role}</span>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {isOwner ? (
+          <div className="mt-5 rounded-lg bg-slate-50 p-4">
+            <h3 className="mb-3 text-sm font-medium text-slate-800">Invite a team member</h3>
+            <div className="grid gap-3 md:grid-cols-[1fr_1fr_140px_auto]">
+              <input
+                value={inviteName}
+                onChange={(event) => setInviteName(event.target.value)}
+                placeholder="Full name"
+                maxLength={200}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              />
+              <input
+                type="email"
+                value={inviteEmail}
+                onChange={(event) => setInviteEmail(event.target.value)}
+                placeholder="name@company.com"
+                maxLength={320}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              />
+              <select
+                value={inviteRole}
+                onChange={(event) => setInviteRole(event.target.value as User['role'])}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              >
+                <option value="viewer">Viewer</option>
+                <option value="editor">Editor</option>
+                <option value="owner">Owner</option>
+              </select>
+              <button
+                type="button"
+                disabled={inviteSending || !inviteName.trim() || !inviteEmail.trim()}
+                onClick={() => void inviteMember()}
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              >
+                {inviteSending ? 'Sending…' : 'Invite'}
+              </button>
+            </div>
+            {pendingInvitations.length > 0 ? (
+              <p className="mt-3 text-xs text-slate-500">
+                Pending: {pendingInvitations.map((invitation) => invitation.email).join(', ')}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-6">
@@ -370,7 +533,7 @@ export default function SettingsPage() {
                   onChange={(e) => setNewPassword(e.target.value)}
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
-                <p className="mt-1 text-xs text-slate-500">At least 8 characters</p>
+                <p className="mt-1 text-xs text-slate-500">At least 12 characters</p>
               </div>
               <div>
                 <label htmlFor="confirm-password" className="mb-1 block text-sm font-medium text-slate-700">

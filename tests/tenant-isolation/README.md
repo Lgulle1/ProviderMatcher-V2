@@ -48,7 +48,9 @@ npm run test:tenant:watch
 6. Same-organization CRUD succeeds.
 7. Users may change `name` only (`id`, `org_id`, `email`, `created_at` are immutable).
 8. Authenticated clients cannot write `widget_sessions` or `widget_session_events`.
-9. `afterAll` cleanup removes test auth users, rows, and storage objects via the service role.
+9. Viewers can read their tenant but cannot write configuration, and the last owner cannot be demoted.
+10. Provider imports commit atomically, roll back on late failures, and reject cross-tenant conflict targets.
+11. `afterAll` cleanup removes test auth users, rows, and storage objects via the service role.
 
 ## Safety notes
 

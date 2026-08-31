@@ -14,6 +14,21 @@ import {
 
 let harness: TestHarness
 
+function importPayload(providerName: string, caseType: string, extra: Record<string, unknown> = {}) {
+  return {
+    filename: 'tenant-integration.xlsx',
+    headers: ['Provider', 'Case Type'],
+    mappings: [
+      { excelHeader: 'Provider', role: 'provider_name' },
+      { excelHeader: 'Case Type', role: 'case_type' },
+    ],
+    rows: [{ Provider: providerName, 'Case Type': caseType }],
+    conflicts: [],
+    resolvedConflicts: {},
+    ...extra,
+  }
+}
+
 beforeAll(async () => {
   harness = await createTestHarness()
 }, 120_000)
@@ -453,6 +468,116 @@ describe('tenant isolation (staging Supabase RLS)', () => {
         .maybeSingle()
 
       expect(afterDelete?.id).toBe(tenantB.records.widgetSessionEvent)
+    })
+  })
+
+  describe('9. database roles are authoritative', () => {
+    it('keeps the last owner and rejects viewer configuration writes', async () => {
+      const { tenantA, service } = harness
+
+      const { error: lastOwnerError } = await tenantA.client.rpc('set_organization_member_role', {
+        p_user_id: tenantA.authUserId,
+        p_role: 'viewer',
+      })
+      expect(lastOwnerError).not.toBeNull()
+
+      const { error: makeViewerError } = await service
+        .from('users')
+        .update({ role: 'viewer' })
+        .eq('id', tenantA.authUserId)
+      expect(makeViewerError).toBeNull()
+
+      try {
+        const { error: writeError } = await tenantA.client
+          .from('case_types')
+          .insert({ org_id: tenantA.orgId, name: 'Viewer write probe' })
+        expect(writeError).not.toBeNull()
+
+        const { data: readable, error: readError } = await tenantA.client
+          .from('providers')
+          .select('id')
+          .eq('id', tenantA.records.provider)
+          .single()
+        expect(readError).toBeNull()
+        expect(readable?.id).toBe(tenantA.records.provider)
+
+        const { error: importError } = await tenantA.client.rpc(
+          'execute_provider_import',
+          { p_payload: importPayload('Viewer Import Probe', 'Viewer Case Probe') },
+        )
+        expect(importError).not.toBeNull()
+      } finally {
+        await service.from('users').update({ role: 'owner' }).eq('id', tenantA.authUserId)
+      }
+    })
+  })
+
+  describe('10. provider imports are atomic and tenant-bound', () => {
+    it('commits a valid import as one tenant-scoped operation', async () => {
+      const { tenantA, runId } = harness
+      const providerName = `Atomic Provider ${runId}`
+      const caseType = `Atomic Case ${runId}`
+
+      const { data, error } = await tenantA.client.rpc('execute_provider_import', {
+        p_payload: importPayload(providerName, caseType),
+      })
+      expect(error).toBeNull()
+      expect(data).toMatchObject({ providersCreated: 1, offeringsUpserted: 1 })
+
+      const providerKey = providerName.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim()
+      const { data: provider, error: providerError } = await tenantA.client
+        .from('providers')
+        .select('id,org_id')
+        .eq('normalized_name', providerKey)
+        .single()
+      expect(providerError).toBeNull()
+      expect(provider?.org_id).toBe(tenantA.orgId)
+
+      const { data: history, error: historyError } = await tenantA.client
+        .from('import_history')
+        .select('rows_processed,providers_created')
+        .eq('filename', 'tenant-integration.xlsx')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+      expect(historyError).toBeNull()
+      expect(history).toMatchObject({ rows_processed: 1, providers_created: 1 })
+    })
+
+    it('rolls back earlier inserts when a later relationship is cross-tenant', async () => {
+      const { tenantA, tenantB, runId } = harness
+      const providerName = `Rollback Provider ${runId}`
+      const caseType = `Rollback Case ${runId}`
+      const payload = importPayload(providerName, caseType, {
+        headers: ['Provider', 'Case Type', 'Foreign Location'],
+        mappings: [
+          { excelHeader: 'Provider', role: 'provider_name' },
+          { excelHeader: 'Case Type', role: 'case_type' },
+          { excelHeader: 'Foreign Location', role: 'location', locationId: tenantB.records.location },
+        ],
+        rows: [{ Provider: providerName, 'Case Type': caseType, 'Foreign Location': 'yes' }],
+      })
+
+      const { error } = await tenantA.client.rpc('execute_provider_import', { p_payload: payload })
+      expect(error).not.toBeNull()
+
+      const providerKey = providerName.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim()
+      const [{ count: providerCount }, { count: caseCount }] = await Promise.all([
+        tenantA.client.from('providers').select('id', { count: 'exact', head: true }).eq('normalized_name', providerKey),
+        tenantA.client.from('case_types').select('id', { count: 'exact', head: true }).ilike('name', caseType),
+      ])
+      expect(providerCount).toBe(0)
+      expect(caseCount).toBe(0)
+    })
+
+    it('rejects a conflict resolution targeting another tenant provider', async () => {
+      const { tenantA, tenantB, runId } = harness
+      const payload = importPayload(`Conflict Probe ${runId}`, `Conflict Case ${runId}`, {
+        conflicts: [{ rowIndex: 0, existingProviderId: tenantB.records.provider }],
+        resolvedConflicts: { 0: 'merge' },
+      })
+      const { error } = await tenantA.client.rpc('execute_provider_import', { p_payload: payload })
+      expect(error).not.toBeNull()
     })
   })
 })

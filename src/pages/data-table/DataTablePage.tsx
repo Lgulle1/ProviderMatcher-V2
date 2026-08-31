@@ -99,7 +99,10 @@ export default function DataTablePage() {
   const [bulkAddLocationId, setBulkAddLocationId] = useState('')
   const [bulkRemoveLocationId, setBulkRemoveLocationId] = useState('')
   const [bulkCategoryId, setBulkCategoryId] = useState('')
-  const offeringsQueryKey = ['data-table-offerings', orgId] as const
+  const offeringsQueryKey = useMemo(
+    () => ['data-table-offerings', orgId] as const,
+    [orgId]
+  )
 
   const { data: offerings = [], isLoading: offeringsLoading } = useQuery({
     queryKey: ['data-table-offerings', orgId],
@@ -814,7 +817,6 @@ export default function DataTablePage() {
     categoryEditorProviderId,
     categoryMap,
     navigate,
-    orgId,
     offeringsQueryKey,
     patchOfferingCache,
     queryClient,
@@ -827,6 +829,9 @@ export default function DataTablePage() {
     toggleBinaryConstraint,
   ])
 
+  // TanStack Table intentionally returns functions that cannot be safely
+  // memoized by React Compiler; the table instance is already hook-managed.
+  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data: filteredOfferings,
     columns,

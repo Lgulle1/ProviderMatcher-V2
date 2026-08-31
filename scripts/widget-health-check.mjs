@@ -19,17 +19,21 @@
 // check is tagged event_type "health_check_ping" so it's trivially
 // filterable out of real analytics.
 
-const SUPABASE_URL = 'https://wuhtfeptdrbdlmnxtumo.supabase.co'
-const ANON_KEY =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind1aHRmZXB0ZHJiZGxtbnh0dW1vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyMDY0MjUsImV4cCI6MjA5MDc4MjQyNX0.ixbiKjiUkp5pXIOZdGjGKm17oHtI_GzL8qf1G0TdYU4'
+function requiredEnv(name) {
+  const value = process.env[name]?.trim()
+  if (!value) throw new Error(`Missing required environment variable: ${name}`)
+  return value
+}
 
-const WIDGET_ID = '4e689dc7-aa2a-44f6-bfcf-f0f75819e3e3' // live Towson Ortho widget
-const ORG_ID = '9d069801-5174-4de2-9402-ccb69586d6d1'
-const ORIGIN = 'https://toa-website-pied.vercel.app' // in that widget's allowed_domains
-const WIDGET_JS_URL = 'https://lgulle1.github.io/ProviderMatcher-V2/widget.js'
+const SUPABASE_URL = requiredEnv('WIDGET_HEALTH_SUPABASE_URL').replace(/\/$/, '')
+const ANON_KEY = requiredEnv('WIDGET_HEALTH_ANON_KEY')
+const WIDGET_ID = requiredEnv('WIDGET_HEALTH_WIDGET_ID')
+const ORIGIN = requiredEnv('WIDGET_HEALTH_ORIGIN')
+const WIDGET_JS_URL = requiredEnv('WIDGET_HEALTH_SCRIPT_URL')
 
 const SESSION_ID = 'deadbeef-dead-4eef-8eef-deadbeefdead' // fixed synthetic canary session
-const PROVIDER_ID = 'deadbeef-beef-4eef-8eef-beefdeadbeef'
+let providerId = null
+let sessionToken = null
 
 const results = []
 
@@ -49,6 +53,7 @@ function assert(cond, msg) {
 }
 
 async function postTrack(body) {
+  body.session_token = sessionToken
   const res = await fetch(`${SUPABASE_URL}/functions/v1/track-session`, {
     method: 'POST',
     headers: {
@@ -79,13 +84,17 @@ await check('widget.js is served and looks like the real bundle', async () => {
 
 // --- 2. widget-data contract ----------------------------------------------
 await check('widget-data returns config + providers for the live widget', async () => {
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/widget-data?id=${WIDGET_ID}`, {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/widget-data?id=${WIDGET_ID}&session_id=${SESSION_ID}`, {
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ANON_KEY}`, Origin: ORIGIN },
   })
   assert(res.status === 200, `expected 200, got ${res.status}`)
   const json = await res.json()
   assert(json.config?.widget_id === WIDGET_ID, 'response config.widget_id does not match')
   assert(Array.isArray(json.providers), 'response is missing providers[]')
+  providerId = json.providers[0]?.id ?? null
+  sessionToken = json.config?.session_token ?? null
+  assert(providerId, 'response has no provider to use for relationship validation')
+  assert(sessionToken, 'response is missing a signed session token')
 })
 
 // --- 3. CORS preflight still matches what the widget requests -------------
@@ -105,14 +114,14 @@ await check('track-session OPTIONS preflight succeeds', async () => {
 // --- 4. Full session upsert (trackSession shape) ---------------------------
 await check('track-session accepts a full session upsert payload', async () => {
   const { status, json } = await postTrack({
+    type: 'session',
     widget_id: WIDGET_ID,
     session_id: SESSION_ID,
     case_type_id: null,
-    answers: {},
     results_count: 1,
-    providers_shown: [PROVIDER_ID],
+    providers_shown: [providerId],
     zero_results: false,
-    results_positions: [{ provider_id: PROVIDER_ID, position: 0 }],
+    results_positions: [{ provider_id: providerId, position: 0 }],
     scroll_depth: null,
   })
   assert(status === 200 && json?.ok === true, `expected 200 {ok:true}, got ${status} ${JSON.stringify(json)}`)
@@ -135,11 +144,23 @@ await check('track-session accepts a click payload', async () => {
     widget_id: WIDGET_ID,
     session_id: SESSION_ID,
     type: 'click',
-    provider_id: PROVIDER_ID,
+    provider_id: providerId,
     position_at_click: 0,
     click_order: 1,
   })
   assert(status === 200 && json?.ok === true, `expected 200 {ok:true}, got ${status} ${JSON.stringify(json)}`)
+})
+
+await check('track-session rejects a provider outside the published widget', async () => {
+  const { status } = await postTrack({
+    widget_id: WIDGET_ID,
+    session_id: SESSION_ID,
+    type: 'click',
+    provider_id: 'deadbeef-beef-4eef-8eef-beefdeadbeef',
+    position_at_click: 0,
+    click_order: 2,
+  })
+  assert(status === 400, `expected 400, got ${status}`)
 })
 
 // --- 7. Generic event ----------------------------------------------------
@@ -148,12 +169,9 @@ await check('track-session accepts an event payload', async () => {
     widget_id: WIDGET_ID,
     session_id: SESSION_ID,
     type: 'event',
-    org_id: ORG_ID,
     event_type: 'health_check_ping',
     step_index: null,
     question_id: null,
-    question_text: null,
-    answer_text: null,
   })
   assert(status === 200 && json?.ok === true, `expected 200 {ok:true}, got ${status} ${JSON.stringify(json)}`)
 })

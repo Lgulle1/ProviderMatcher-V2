@@ -8,7 +8,6 @@ Admin app for configuring provider-matching widgets, clinical routing rules, and
 npm ci
 cp .env.example .env.local
 # Fill in VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env.local
-# Optional: set VITE_ENABLE_SIGNUP=true to allow public sign-up (default: invite-only)
 npm run dev
 ```
 
@@ -17,6 +16,9 @@ npm run dev
 ```bash
 npm ci
 npm run build
+npm run check:migrations
+npm run check:edge-safety
+npm run check:edge-types
 ```
 
 The production bundle is written to `dist/`.
@@ -37,9 +39,22 @@ Set these in the Vercel project **Environment Variables** settings:
 |----------|-------------|
 | `VITE_SUPABASE_URL` | Supabase project URL (e.g. `https://your-project.supabase.co`) |
 | `VITE_SUPABASE_ANON_KEY` | Supabase anonymous (public) API key |
-| `VITE_ENABLE_SIGNUP` | Optional. Must be exactly `true` to show sign-up on the login page. Any other value (including unset) keeps sign-up hidden and shows an invite-only message. |
+| `VITE_WIDGET_SCRIPT_URL` | Approved company-owned HTTPS URL for the versioned widget bundle. Required before embed code is issued. |
+| `VITE_IDLE_TIMEOUT_MINUTES` | Admin inactivity timeout; defaults to 30 and cannot be configured below 5. |
+
+The standalone widget build separately requires `SUPABASE_URL` and
+`SUPABASE_ANON_KEY`. They are public browser configuration, but must be supplied
+by the protected deployment environment so no developer/project identity is
+hardcoded into the artifact.
 
 See `.env.example` for a template.
+
+Production onboarding is invitation-only. Disable public email signup in the
+Supabase Auth settings. Invitations for a new organization must include
+`full_name` and `organization_name` user metadata; on the invitee's first sign
+in, the database-guarded `complete_signup` RPC atomically creates the profile
+and organization. The RPC independently verifies that `auth.users.invited_at`
+is present, so calling the public Auth signup API cannot create application data.
 
 > **Warning:** Never add `SUPABASE_SERVICE_ROLE_KEY` to Vercel or any other client-facing deployment. The service role key bypasses Row Level Security and must only be used in trusted server-side contexts (e.g. Supabase Edge Functions, local scripts).
 
@@ -47,14 +62,21 @@ SPA routing and security headers are configured in `vercel.json`.
 
 ## Database migrations & edge functions (Supabase)
 
-Schema changes live in `supabase/migrations/*.sql` and are **not** applied automatically — pushing to `main` deploys the frontend (Vercel) and the widget (GitHub Pages), but the database and edge functions need their own explicit steps:
+Schema changes live in `supabase/migrations/*.sql` and are **not** applied automatically. Database and edge functions need their own explicit, approved deployment steps:
 
 ```bash
 supabase db push
-supabase functions deploy <name> --project-ref wuhtfeptdrbdlmnxtumo
+supabase functions deploy <name> --project-ref <approved-project-ref>
 ```
 
-There is no staging database gate — these commands write directly to production. Run them deliberately, not as a reflex.
+Direct CLI commands target whichever project is linked and bypass the protected
+release workflow. Reserve them for approved recovery work and verify the linked
+project before running them.
+
+The repository now includes a manual, protected `Deploy Supabase` workflow and
+a disposable-database CI job. Configure a staging GitHub environment and follow
+[`docs/production-readiness.md`](docs/production-readiness.md) instead of using
+the direct production commands above for normal releases.
 
 ### Migration filename gotcha
 
@@ -92,4 +114,4 @@ See [tests/tenant-isolation/README.md](tests/tenant-isolation/README.md) for ful
 
 ## Widget (separate deploy)
 
-The embeddable widget lives in `widget/` and is deployed separately (e.g. GitHub Pages via `.github/workflows/deploy-widget.yml`). It is not part of the Vercel admin app build.
+The embeddable widget lives in `widget/` and is deployed separately. The included GitHub Pages workflow is manual-only and targets a protected `widget-production` environment; production must use a company-owned repository and approved HTTPS asset URL. Configure the health-check workflow variables/secrets before enabling its schedule. The widget is not part of the Vercel admin app build.

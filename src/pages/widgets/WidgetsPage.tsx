@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Globe } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { createWidget, getWidgets } from '../../lib/api/widgets'
+import { approvedHttpsUrl } from '../../lib/approvedUrl'
 import { useAuthStore } from '../../stores/authStore'
 import type { Widget } from '../../types/database'
 
@@ -95,9 +96,10 @@ export default function WidgetsPage() {
     setModal({ type: 'create' })
   }
 
+  const widgetScriptUrl = approvedHttpsUrl(import.meta.env.VITE_WIDGET_SCRIPT_URL)
   const embedScript =
-    modal.type === 'embed' && modal.payload
-      ? `<script src="https://lgulle1.github.io/ProviderMatcher-V2/widget.js" data-widget-id="${modal.payload.id}"></script>`
+    modal.type === 'embed' && modal.payload && widgetScriptUrl
+      ? `<script src="${widgetScriptUrl}" data-widget-id="${modal.payload.id}"></script>`
       : ''
 
   async function copyEmbedCode() {
@@ -252,14 +254,21 @@ export default function WidgetsPage() {
               {modal.payload.name} — Embed Code
             </h2>
 
-            <pre className="overflow-x-auto rounded-xl bg-slate-900 p-4 font-mono text-sm text-green-400">
-              {embedScript}
-            </pre>
+            {embedScript ? (
+              <pre className="overflow-x-auto rounded-xl bg-slate-900 p-4 font-mono text-sm text-green-400">
+                {embedScript}
+              </pre>
+            ) : (
+              <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                Widget delivery is not configured. Set VITE_WIDGET_SCRIPT_URL to the approved company-owned HTTPS asset URL.
+              </p>
+            )}
 
             <button
               type="button"
               onClick={() => void copyEmbedCode()}
-              className="mt-4 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50"
+              disabled={!embedScript}
+              className="mt-4 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {embedCopied ? 'Copied!' : 'Copy Code'}
             </button>

@@ -1,4 +1,5 @@
 import { supabase } from '../supabase'
+import { validateImageUpload } from '../imageUpload'
 import type { Widget } from '../../types/database'
 
 export async function getWidgets(orgId: string): Promise<Widget[]> {
@@ -63,6 +64,8 @@ export async function publishWidget(
       status: 'live',
       published_at: new Date().toISOString(),
       published_snapshot: snapshot,
+      disclaimer_text: typeof snapshot.disclaimer_text === 'string' ? snapshot.disclaimer_text : null,
+      privacy_url: typeof snapshot.privacy_url === 'string' ? snapshot.privacy_url : null,
     })
     .eq('id', id)
 
@@ -80,6 +83,8 @@ export async function uploadWidgetIcon(
   orgId: string,
   file: File
 ): Promise<{ url: string | null; error: string | null }> {
+  const validationError = validateImageUpload(file)
+  if (validationError) return { url: null, error: validationError }
   const extension = file.name.split('.').pop()?.toLowerCase() ?? 'jpg'
   const path = `${orgId}/widget-${widgetId}.${extension}`
 

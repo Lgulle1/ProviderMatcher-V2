@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
-import { getSession } from '../../hooks/useAuth'
+import { getSession, signOut } from '../../hooks/useAuth'
 import { useAuthStore } from '../../stores/authStore'
 
 type GuardState = 'loading' | 'login' | 'onboarding' | 'allowed'
@@ -37,6 +37,31 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    if (state !== 'allowed') return
+    const configured = Number(import.meta.env.VITE_IDLE_TIMEOUT_MINUTES ?? '30')
+    const timeoutMs = (Number.isFinite(configured) && configured >= 5 ? configured : 30) * 60_000
+    const storageKey = 'pm-last-activity'
+    const recordActivity = () => sessionStorage.setItem(storageKey, String(Date.now()))
+    if (!sessionStorage.getItem(storageKey)) recordActivity()
+
+    const checkIdle = () => {
+      const lastActivity = Number(sessionStorage.getItem(storageKey) ?? '0')
+      if (!lastActivity || Date.now() - lastActivity < timeoutMs) return
+      sessionStorage.removeItem(storageKey)
+      void signOut().finally(() => setState('login'))
+    }
+
+    const events: Array<keyof WindowEventMap> = ['pointerdown', 'keydown', 'touchstart']
+    events.forEach((event) => window.addEventListener(event, recordActivity, { passive: true }))
+    const interval = window.setInterval(checkIdle, 30_000)
+    checkIdle()
+    return () => {
+      events.forEach((event) => window.removeEventListener(event, recordActivity))
+      window.clearInterval(interval)
+    }
+  }, [state])
 
   if (state === 'loading') {
     return (

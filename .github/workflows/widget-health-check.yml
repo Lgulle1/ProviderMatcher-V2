@@ -1,6 +1,6 @@
 name: Widget Health Check
 
-# Catches drift between the deployed widget.js (GitHub Pages) and the
+# Catches drift between the widget.js on the approved company asset host and the
 # deployed track-session/widget-data edge functions (Supabase) -- the two
 # ship independently, so nothing else guarantees they still agree.
 #
@@ -13,13 +13,22 @@ on:
     branches: [main]
   workflow_dispatch: {} # lets you run it on demand from the Actions tab
 
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest
+    env:
+      WIDGET_HEALTH_SUPABASE_URL: ${{ vars.WIDGET_HEALTH_SUPABASE_URL }}
+      WIDGET_HEALTH_ANON_KEY: ${{ secrets.WIDGET_HEALTH_ANON_KEY }}
+      WIDGET_HEALTH_WIDGET_ID: ${{ vars.WIDGET_HEALTH_WIDGET_ID }}
+      WIDGET_HEALTH_ORIGIN: ${{ vars.WIDGET_HEALTH_ORIGIN }}
+      WIDGET_HEALTH_SCRIPT_URL: ${{ vars.WIDGET_HEALTH_SCRIPT_URL }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: '24'
 
