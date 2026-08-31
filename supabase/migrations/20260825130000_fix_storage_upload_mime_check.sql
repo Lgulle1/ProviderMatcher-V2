@@ -28,5 +28,29 @@ CREATE POLICY provider_images_authenticated_insert
     AND lower(storage.extension(name)) IN ('jpg', 'jpeg', 'png', 'webp')
   );
 
--- ROLLBACK: restore the INSERT policy from 20260825114500, accepting that
--- authenticated uploads will fail until the metadata condition is removed again.
+-- The second half of the same breakage. Both upload paths in the app use
+-- upsert (src/lib/api/providers.ts and src/lib/api/widgets.ts), which becomes
+-- INSERT ... ON CONFLICT DO UPDATE, and Postgres requires SELECT and UPDATE
+-- policies on the table for that form. 20260821120000 dropped
+-- provider_images_public_read to stop anonymous enumeration of the bucket,
+-- which was correct, but it left storage.objects with no SELECT policy at all
+-- -- so every authenticated upsert has been denied ever since. That migration
+-- checked the app never calls storage.list(); the upsert dependency is less
+-- obvious and was missed.
+--
+-- This restores only what the upsert needs: authenticated users may read
+-- objects inside their own org folder. Anonymous enumeration stays closed,
+-- since anon gets no policy, and public image serving is unaffected because
+-- getPublicUrl is served by the CDN path and never consults RLS.
+
+DROP POLICY IF EXISTS provider_images_authenticated_select ON storage.objects;
+
+CREATE POLICY provider_images_authenticated_select
+  ON storage.objects FOR SELECT TO authenticated
+  USING (
+    bucket_id = 'provider-images'
+    AND (storage.foldername(name))[1] = provider_matcher_private.get_user_org_id()::text
+  );
+
+-- ROLLBACK: drop provider_images_authenticated_select and restore the INSERT
+-- policy from 20260825114500, accepting that authenticated uploads break again.
