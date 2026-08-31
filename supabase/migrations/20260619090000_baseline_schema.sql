@@ -216,6 +216,21 @@ BEGIN
 END;
 $$;
 
+-- Backs providers.normalized_name, used for import de-duplication. Like
+-- update_updated_at it predates this repo's migration history, so it belongs
+-- in the baseline: 20260821120000 runs ALTER FUNCTION against it, and on a
+-- database built from scratch that fails with 42883 unless it already exists
+-- by then. (20260821130000 also defines it, but runs too late to help.)
+-- Definition matches that migration's, which was copied from the live one.
+CREATE OR REPLACE FUNCTION public.normalize_name(input text)
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+SET search_path = 'public', 'pg_temp'
+AS $$
+  SELECT LOWER(REGEXP_REPLACE(TRIM(input), '[^a-zA-Z0-9\s]', '', 'g'));
+$$;
+
 DO $updated_at_triggers$
 DECLARE
   v_table text;
