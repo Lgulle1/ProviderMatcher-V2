@@ -3,7 +3,7 @@ import type { Constraint } from '../../types/database'
 
 export type ConstraintFormSavePayload = Omit<Constraint, 'id' | 'created_at' | 'updated_at'>
 
-type ConstraintType = 'binary' | 'range' | 'exact'
+import { asConstraintType, asMapsTo, type ConstraintType } from '../../lib/schemaEnums'
 
 interface FormState {
   name: string
@@ -42,8 +42,8 @@ function formFromConstraint(c: Constraint): FormState {
       c.max_allowed_value === null || c.max_allowed_value === undefined ? '' : String(c.max_allowed_value),
     yes_label: c.yes_label || 'Yes',
     no_label: c.no_label || 'No',
-    yes_maps_to: c.yes_maps_to,
-    no_maps_to: c.no_maps_to,
+    yes_maps_to: asMapsTo(c.yes_maps_to, 'both'),
+    no_maps_to: asMapsTo(c.no_maps_to, '0'),
   }
 }
 
@@ -161,7 +161,7 @@ export default function ConstraintModal({
     setError('')
     setIsSaving(false)
     if (initialData) {
-      setType(initialData.type)
+      setType(asConstraintType(initialData.type))
       setFormData(formFromConstraint(initialData))
     } else {
       setType(null)

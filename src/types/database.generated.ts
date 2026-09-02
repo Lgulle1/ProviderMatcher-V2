@@ -90,7 +90,7 @@ export type Database = {
           is_archived: boolean | null
           name: string
           org_id: string
-          sort_order: number | null
+          sort_order: number
           updated_at: string | null
         }
         Insert: {
@@ -99,7 +99,7 @@ export type Database = {
           is_archived?: boolean | null
           name: string
           org_id: string
-          sort_order?: number | null
+          sort_order?: number
           updated_at?: string | null
         }
         Update: {
@@ -108,7 +108,7 @@ export type Database = {
           is_archived?: boolean | null
           name?: string
           org_id?: string
-          sort_order?: number | null
+          sort_order?: number
           updated_at?: string | null
         }
         Relationships: [
@@ -128,7 +128,7 @@ export type Database = {
           is_archived: boolean | null
           name: string
           org_id: string
-          sort_order: number | null
+          sort_order: number
           updated_at: string | null
         }
         Insert: {
@@ -137,7 +137,7 @@ export type Database = {
           is_archived?: boolean | null
           name: string
           org_id: string
-          sort_order?: number | null
+          sort_order?: number
           updated_at?: string | null
         }
         Update: {
@@ -146,7 +146,7 @@ export type Database = {
           is_archived?: boolean | null
           name?: string
           org_id?: string
-          sort_order?: number | null
+          sort_order?: number
           updated_at?: string | null
         }
         Relationships: [
@@ -172,7 +172,7 @@ export type Database = {
           no_maps_to: string | null
           org_id: string
           secondary_mapped_key: string | null
-          sort_order: number | null
+          sort_order: number
           type: string
           updated_at: string | null
           yes_label: string | null
@@ -190,7 +190,7 @@ export type Database = {
           no_maps_to?: string | null
           org_id: string
           secondary_mapped_key?: string | null
-          sort_order?: number | null
+          sort_order?: number
           type: string
           updated_at?: string | null
           yes_label?: string | null
@@ -208,7 +208,7 @@ export type Database = {
           no_maps_to?: string | null
           org_id?: string
           secondary_mapped_key?: string | null
-          sort_order?: number | null
+          sort_order?: number
           type?: string
           updated_at?: string | null
           yes_label?: string | null
@@ -281,7 +281,7 @@ export type Database = {
           name: string
           org_id: string
           phone: string | null
-          sort_order: number | null
+          sort_order: number
           updated_at: string | null
         }
         Insert: {
@@ -293,7 +293,7 @@ export type Database = {
           name: string
           org_id: string
           phone?: string | null
-          sort_order?: number | null
+          sort_order?: number
           updated_at?: string | null
         }
         Update: {
@@ -305,7 +305,7 @@ export type Database = {
           name?: string
           org_id?: string
           phone?: string | null
-          sort_order?: number | null
+          sort_order?: number
           updated_at?: string | null
         }
         Relationships: [
@@ -325,7 +325,7 @@ export type Database = {
           created_at: string | null
           id: string
           is_archived: boolean | null
-          location_ids: string[] | null
+          location_ids: string[]
           org_id: string
           provider_id: string
           updated_at: string | null
@@ -336,7 +336,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           is_archived?: boolean | null
-          location_ids?: string[] | null
+          location_ids?: string[]
           org_id: string
           provider_id: string
           updated_at?: string | null
@@ -347,7 +347,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           is_archived?: boolean | null
-          location_ids?: string[] | null
+          location_ids?: string[]
           org_id?: string
           provider_id?: string
           updated_at?: string | null
@@ -518,7 +518,7 @@ export type Database = {
         Row: {
           bio_link: string | null
           booking_mode: string | null
-          category_ids: string[] | null
+          category_ids: string[]
           created_at: string | null
           email: string | null
           id: string
@@ -535,7 +535,7 @@ export type Database = {
         Insert: {
           bio_link?: string | null
           booking_mode?: string | null
-          category_ids?: string[] | null
+          category_ids?: string[]
           created_at?: string | null
           email?: string | null
           id?: string
@@ -552,7 +552,7 @@ export type Database = {
         Update: {
           bio_link?: string | null
           booking_mode?: string | null
-          category_ids?: string[] | null
+          category_ids?: string[]
           created_at?: string | null
           email?: string | null
           id?: string
@@ -583,11 +583,11 @@ export type Database = {
           id: string
           input_type: string
           is_archived: boolean | null
-          order_rank: number | null
+          order_rank: number
           org_id: string
           question_text: string
           question_type: string
-          required: boolean | null
+          required: boolean
           subtext: string | null
           system_config: Json | null
           updated_at: string | null
@@ -598,11 +598,11 @@ export type Database = {
           id?: string
           input_type?: string
           is_archived?: boolean | null
-          order_rank?: number | null
+          order_rank?: number
           org_id: string
           question_text: string
           question_type?: string
-          required?: boolean | null
+          required?: boolean
           subtext?: string | null
           system_config?: Json | null
           updated_at?: string | null
@@ -613,11 +613,11 @@ export type Database = {
           id?: string
           input_type?: string
           is_archived?: boolean | null
-          order_rank?: number | null
+          order_rank?: number
           org_id?: string
           question_text?: string
           question_type?: string
-          required?: boolean | null
+          required?: boolean
           subtext?: string | null
           system_config?: Json | null
           updated_at?: string | null
@@ -806,11 +806,11 @@ export type Database = {
           privacy_url: string | null
           published_at: string | null
           published_snapshot: Json | null
-          question_order: Json | null
-          scoped_case_type_ids: string[] | null
-          scoped_location_ids: string[] | null
-          scoped_provider_ids: string[] | null
-          scoped_question_ids: string[] | null
+          question_order: Json
+          scoped_case_type_ids: string[]
+          scoped_location_ids: string[]
+          scoped_provider_ids: string[]
+          scoped_question_ids: string[]
           show_worth_the_drive: boolean | null
           status: string | null
           updated_at: string | null
@@ -835,11 +835,11 @@ export type Database = {
           privacy_url?: string | null
           published_at?: string | null
           published_snapshot?: Json | null
-          question_order?: Json | null
-          scoped_case_type_ids?: string[] | null
-          scoped_location_ids?: string[] | null
-          scoped_provider_ids?: string[] | null
-          scoped_question_ids?: string[] | null
+          question_order?: Json
+          scoped_case_type_ids?: string[]
+          scoped_location_ids?: string[]
+          scoped_provider_ids?: string[]
+          scoped_question_ids?: string[]
           show_worth_the_drive?: boolean | null
           status?: string | null
           updated_at?: string | null
@@ -864,11 +864,11 @@ export type Database = {
           privacy_url?: string | null
           published_at?: string | null
           published_snapshot?: Json | null
-          question_order?: Json | null
-          scoped_case_type_ids?: string[] | null
-          scoped_location_ids?: string[] | null
-          scoped_provider_ids?: string[] | null
-          scoped_question_ids?: string[] | null
+          question_order?: Json
+          scoped_case_type_ids?: string[]
+          scoped_location_ids?: string[]
+          scoped_provider_ids?: string[]
+          scoped_question_ids?: string[]
           show_worth_the_drive?: boolean | null
           status?: string | null
           updated_at?: string | null
