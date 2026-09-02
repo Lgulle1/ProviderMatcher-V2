@@ -589,4 +589,85 @@ describe('tenant isolation (staging Supabase RLS)', () => {
       expect(error).not.toBeNull()
     })
   })
+
+  describe('11. live widget publication requirements', () => {
+    const PRIVACY_URL = 'https://example.invalid/privacy'
+    const DISCLAIMER = 'Informational only, not medical advice.'
+
+    beforeAll(async () => {
+      // Publishing checks the org's approved domains, which the fixtures leave
+      // empty because nothing else in the suite publishes anything.
+      const { error } = await harness.service
+        .from('organizations')
+        .update({ allowed_domains: ['clinic.example.com'] })
+        .eq('id', harness.tenantA.orgId)
+      expect(error).toBeNull()
+    })
+
+    afterAll(async () => {
+      await harness.service
+        .from('widgets')
+        .update({ status: 'draft' })
+        .eq('id', harness.tenantA.records.widget)
+    })
+
+    it('rejects publishing a widget with no privacy notice', async () => {
+      const { tenantA } = harness
+
+      const { error } = await tenantA.client
+        .from('widgets')
+        .update({
+          status: 'live',
+          disclaimer_text: DISCLAIMER,
+          published_snapshot: {},
+          privacy_url: null,
+        })
+        .eq('id', tenantA.records.widget)
+
+      expect(error).not.toBeNull()
+      expect((error?.message ?? '').toLowerCase()).toContain('privacy notice')
+    })
+
+    it('publishes when every requirement is met', async () => {
+      const { tenantA } = harness
+
+      const { error } = await tenantA.client
+        .from('widgets')
+        .update({
+          status: 'live',
+          disclaimer_text: DISCLAIMER,
+          published_snapshot: {},
+          privacy_url: PRIVACY_URL,
+        })
+        .eq('id', tenantA.records.widget)
+
+      expect(error).toBeNull()
+    })
+
+    it('rejects clearing the privacy notice on a live widget', async () => {
+      const { tenantA } = harness
+
+      const { error } = await tenantA.client
+        .from('widgets')
+        .update({ privacy_url: null })
+        .eq('id', tenantA.records.widget)
+
+      expect(error).not.toBeNull()
+      expect((error?.message ?? '').toLowerCase()).toContain('privacy notice')
+    })
+
+    it('allows editing a live widget without restating the requirements', async () => {
+      const { tenantA, runId } = harness
+
+      // The reason this migration exists: a live widget has to stay editable.
+      // Under the previous trigger every write re-checked all four
+      // requirements, so a rename failed unless it also resupplied them.
+      const { error } = await tenantA.client
+        .from('widgets')
+        .update({ name: `Renamed live widget ${runId}` })
+        .eq('id', tenantA.records.widget)
+
+      expect(error).toBeNull()
+    })
+  })
 })

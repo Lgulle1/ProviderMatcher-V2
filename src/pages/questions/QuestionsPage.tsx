@@ -47,6 +47,7 @@ import {
 } from '../../lib/api/questions'
 import { useAuthStore } from '../../stores/authStore'
 import type { Constraint, Location, Question } from '../../types/database'
+import { toJson } from '../../lib/schemaEnums'
 
 const EMPTY_QUESTIONS: Question[] = []
 
@@ -614,7 +615,7 @@ export default function QuestionsPage() {
       constraint_id,
       required: addFormData.required,
       order_rank,
-      system_config,
+      system_config: toJson(system_config),
       is_archived: false,
     })
 
@@ -701,7 +702,7 @@ export default function QuestionsPage() {
       updates.constraint_id = addConstraintId
     }
     if (q.question_type === 'location') {
-      updates.system_config = system_config
+      updates.system_config = toJson(system_config)
     }
     if (q.question_type === 'provider') {
       updates.system_config = {}
