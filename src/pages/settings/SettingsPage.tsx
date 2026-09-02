@@ -5,6 +5,7 @@ import { normalizeApprovedDomain } from '../../lib/approvedDomain'
 import { useAuthStore } from '../../stores/authStore'
 import { useToast } from '../../components/ui/toastStore'
 import type { Organization, OrganizationInvitation, User } from '../../types/database'
+import { asOrgMode } from '../../lib/schemaEnums'
 
 type OrgFormValues = {
   name: string
@@ -60,10 +61,10 @@ export default function SettingsPage() {
     reset({
       name: org.name,
       fallback_phone: org.fallback_phone ?? '',
-      fallback_message: org.fallback_message,
+      fallback_message: org.fallback_message ?? '',
       allowed_domains_text: (org.allowed_domains ?? []).join('\n'),
-      default_booking_mode: org.default_booking_mode ?? 'simple',
-      default_phone_mode: org.default_phone_mode ?? 'simple',
+      default_booking_mode: asOrgMode(org.default_booking_mode),
+      default_phone_mode: asOrgMode(org.default_phone_mode),
     })
   }, [org, reset])
 
@@ -185,10 +186,10 @@ export default function SettingsPage() {
     reset({
       name: updated.name,
       fallback_phone: updated.fallback_phone ?? '',
-      fallback_message: updated.fallback_message,
+      fallback_message: updated.fallback_message ?? '',
       allowed_domains_text: (updated.allowed_domains ?? []).join('\n'),
-      default_booking_mode: updated.default_booking_mode,
-      default_phone_mode: updated.default_phone_mode,
+      default_booking_mode: asOrgMode(updated.default_booking_mode),
+      default_phone_mode: asOrgMode(updated.default_phone_mode),
     })
   })
 
