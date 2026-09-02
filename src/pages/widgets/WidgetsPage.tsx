@@ -168,8 +168,8 @@ export default function WidgetsPage() {
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 <div
                   className="h-4 w-4 shrink-0 rounded-full border border-slate-200"
-                  style={{ backgroundColor: widget.primary_color }}
-                  title={widget.primary_color}
+                  style={{ backgroundColor: widget.primary_color ?? '#4F46E5' }}
+                  title={widget.primary_color ?? undefined}
                 />
                 <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium capitalize text-slate-700">
                   {widget.embed_mode}

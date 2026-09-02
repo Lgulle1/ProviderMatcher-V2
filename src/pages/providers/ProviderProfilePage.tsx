@@ -36,6 +36,7 @@ import type {
   Offering,
   ProviderLocation,
 } from '../../types/database'
+import { asProviderMode, asRecord, toJson } from '../../lib/schemaEnums'
 
 // Stable singleton, not a fresh `[]` literal — a per-render default would
 // change identity every render, which is exactly the bug that used to make
@@ -173,8 +174,8 @@ export default function ProviderProfilePage() {
     setSyncedProvider(provider)
     setCategoryIds(provider.category_ids ?? [])
     setOriginalCategoryIds(provider.category_ids ?? [])
-    setBookingMode(provider.booking_mode ?? 'default')
-    setPhoneMode(provider.phone_mode ?? 'default')
+    setBookingMode(asProviderMode(provider.booking_mode))
+    setPhoneMode(asProviderMode(provider.phone_mode))
   }
 
   // react-hook-form's reset() is an external store write, so it stays in an
@@ -241,7 +242,7 @@ export default function ProviderProfilePage() {
   function openEditOffering(target: Offering) {
     setOfferingCaseTypeId(target.case_type_id ?? '')
     setOfferingDraftLocationIds(target.location_ids ?? [])
-    setOfferingConstraints(target.constraints ?? {})
+    setOfferingConstraints(asRecord(target.constraints))
     setModal({ type: 'edit-offering', payload: target })
   }
 
@@ -457,7 +458,7 @@ export default function ProviderProfilePage() {
       const result = await updateOffering(modal.payload.id, {
         case_type_id: offeringCaseTypeId,
         location_ids: offeringDraftLocationIds,
-        constraints: offeringConstraints,
+        constraints: toJson(offeringConstraints),
       })
       if (result.error) {
         setOfferingError(result.error)
