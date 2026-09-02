@@ -1,8 +1,14 @@
 name: Deploy Widget to GitHub Pages
 
 on:
-  # Production widget publishing is deliberately approval-driven. Configure a
-  # protected widget-production environment in the company-owned repository.
+  # Merging to main is the release. main is protected by a ruleset requiring a
+  # pull request and green verify + database checks, so nothing reaches this
+  # workflow unreviewed -- that is the approval gate. Duplicating it as a manual
+  # dispatch only meant the widget silently stopped shipping for nine days while
+  # a merged WCAG contrast fix sat undeployed.
+  push:
+    branches: [main]
+  # Kept so the current main can be redeployed without an empty commit.
   workflow_dispatch: {}
 
 jobs:
