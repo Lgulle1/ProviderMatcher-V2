@@ -2,6 +2,14 @@
 
 Admin app for configuring provider-matching widgets, clinical routing rules, and analytics. Built with React, TypeScript, Vite, and Supabase.
 
+## Production URLs
+
+| URL | Serves | Host |
+|-----|--------|------|
+| `app.providerroute.com` | This admin app | Vercel |
+| `widget.providerroute.com/widget.js` | The embeddable widget bundle | GitHub Pages (`gh-pages` branch), Cloudflare-proxied |
+| `providerroute.com` | Landing page (not yet built) | unconfigured |
+
 ## Local development
 
 ```bash
