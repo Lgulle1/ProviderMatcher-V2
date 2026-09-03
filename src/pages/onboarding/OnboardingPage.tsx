@@ -90,7 +90,7 @@ export default function OnboardingPage() {
 
         {step === 1 ? (
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">Welcome to ProviderMatcher</h1>
+            <h1 className="text-2xl font-bold text-slate-900">Welcome to ProviderRoute</h1>
             <p className="mt-3 text-slate-600">
               Let&apos;s get your provider directory set up. You&apos;ll add your office locations,
               import your providers, and be ready to build your first widget.

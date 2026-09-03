@@ -148,16 +148,16 @@ import { readableTextColor } from '../../src/shared/colorContrast'
       var scripts = document.querySelectorAll('script[data-widget-id]')
       var script = scripts[scripts.length - 1]
       if (!script) {
-        console.warn('ProviderMatcher: No script tag with data-widget-id found')
+        console.warn('ProviderRoute: No script tag with data-widget-id found')
         return
       }
       this.widgetId = script.getAttribute('data-widget-id')
       if (!this.widgetId) {
-        console.warn('ProviderMatcher: Missing data-widget-id')
+        console.warn('ProviderRoute: Missing data-widget-id')
         return
       }
       if (!supabaseBaseUrl || !supabaseAnonKey || !this.state.sessionId) {
-        console.warn('ProviderMatcher: Secure runtime configuration is unavailable')
+        console.warn('ProviderRoute: Secure runtime configuration is unavailable')
         return
       }
       var self = this
@@ -185,7 +185,7 @@ import { readableTextColor } from '../../src/shared/colorContrast'
         if (!response.ok) throw new Error('HTTP ' + response.status)
         this.data = await response.json()
       } catch (e) {
-        console.warn('ProviderMatcher: Failed to load widget data', e)
+        console.warn('ProviderRoute: Failed to load widget data', e)
         this.data = null
       }
     },
@@ -193,7 +193,7 @@ import { readableTextColor } from '../../src/shared/colorContrast'
     checkDomain: function () {
       var domains = (this.data && this.data.config && this.data.config.allowed_domains) || []
       if (!domains.length) {
-        console.warn('ProviderMatcher: No approved domains are configured')
+        console.warn('ProviderRoute: No approved domains are configured')
         this.data = null
         return
       }
@@ -208,7 +208,7 @@ import { readableTextColor } from '../../src/shared/colorContrast'
         return host === d || host.endsWith('.' + d)
       })
       if (!allowed) {
-        console.warn('ProviderMatcher: Domain not authorized')
+        console.warn('ProviderRoute: Domain not authorized')
         this.data = null
       }
     },
@@ -1703,13 +1703,13 @@ import { readableTextColor } from '../../src/shared/colorContrast'
           .then(function (res) {
             if (!res.ok) {
               if (res.status >= 500 && retriesLeft > 0) return attempt(retriesLeft - 1)
-              console.warn('[ProviderMatcher] tracking failed (' + label + '): HTTP ' + res.status)
+              console.warn('[ProviderRoute] tracking failed (' + label + '): HTTP ' + res.status)
             }
             return res
           })
           .catch(function (err) {
             if (retriesLeft > 0) return attempt(retriesLeft - 1)
-            console.warn('[ProviderMatcher] tracking failed (' + label + '):', err)
+            console.warn('[ProviderRoute] tracking failed (' + label + '):', err)
           })
       }
       return attempt(1)
@@ -1786,7 +1786,7 @@ import { readableTextColor } from '../../src/shared/colorContrast'
    * Public API for opening the chat from an element elsewhere on the host
    * page (e.g. a "Not sure who to see? Match me" link/button written into
    * the site itself, outside this widget's own floating button). Wire such
-   * a trigger to `window._ProviderMatcher.open()` rather than clicking the
+   * a trigger to `window._ProviderRoute.open()` rather than clicking the
    * floating button's DOM node directly — the button may not exist yet if
    * open_delay_enabled is on, and clicking a node that isn't there yet is a
    * silent no-op. This always opens immediately: it cancels any pending
@@ -1813,7 +1813,7 @@ import { readableTextColor } from '../../src/shared/colorContrast'
    * hits a broken step still gets a way to reach the practice.
    */
   widget.degrade = function (label, err) {
-    console.warn('[ProviderMatcher] recovering from error in ' + label + ':', err)
+    console.warn('[ProviderRoute] recovering from error in ' + label + ':', err)
     if (this.degraded) return
     this.degraded = true
 
@@ -1876,7 +1876,7 @@ import { readableTextColor } from '../../src/shared/colorContrast'
     } catch (err) {
       // Nothing is rendered yet, so there is no UI to degrade into — stay out
       // of the host page's way rather than throwing into it.
-      console.warn('[ProviderMatcher] failed to start:', err)
+      console.warn('[ProviderRoute] failed to start:', err)
     }
   }
 
@@ -1886,5 +1886,8 @@ import { readableTextColor } from '../../src/shared/colorContrast'
     boot()
   }
 
+  window._ProviderRoute = widget
+  // Back-compat alias: any site whose custom JS calls window._ProviderMatcher.open()
+  // directly (per the old docs) keeps working. Do not remove without a deprecation window.
   window._ProviderMatcher = widget
 })()
