@@ -561,6 +561,11 @@ import { readableTextColor } from '../../src/shared/colorContrast'
     appendPrivacyNotice: function (container) {
       var config = (this.data && this.data.config) || {}
       if (!config.disclaimer_text || !config.privacy_url) return
+      // startFlow() can short-circuit straight into showResults() (a widget
+      // with zero configured questions), which appends its own notice into
+      // `results` before that gets attached to `body` -- guard so the two
+      // call sites can never stack a duplicate onto the same screen.
+      if (container.querySelector('.pm-disclaimer')) return
       var disc = document.createElement('div')
       disc.className = 'pm-disclaimer'
       var discText = document.createElement('span')
@@ -590,8 +595,12 @@ import { readableTextColor } from '../../src/shared/colorContrast'
         this._scrollObserver.disconnect()
         this._scrollObserver = null
       }
-      if (body) this.appendPrivacyNotice(body)
       this.renderQuestion()
+      // Runs after renderQuestion, not before: appendPrivacyNotice's own CSS
+      // (.pm-disclaimer: 11px, gray, border-top) is a footer note, not a
+      // blocking intro -- it was rendering first and pushing the actual
+      // question below the fold, backwards from what its styling intends.
+      if (body) this.appendPrivacyNotice(body)
     },
 
     getQuestionSequence: function () {
