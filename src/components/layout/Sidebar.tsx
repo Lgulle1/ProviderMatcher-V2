@@ -38,7 +38,7 @@ export default function Sidebar() {
   return (
     <aside className="flex h-screen w-64 flex-col border-r border-slate-200 bg-white">
       <div className="px-6 py-5 border-b border-slate-200">
-        <span className="text-xl font-bold text-indigo-600">ProviderMatcher</span>
+        <span className="text-xl font-bold text-indigo-600">ProviderRoute</span>
       </div>
 
       <nav className="flex flex-1 flex-col overflow-y-auto py-4">

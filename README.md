@@ -1,4 +1,4 @@
-# ProviderMatcher V2
+# ProviderRoute
 
 Admin app for configuring provider-matching widgets, clinical routing rules, and analytics. Built with React, TypeScript, Vite, and Supabase.
 

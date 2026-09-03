@@ -51,7 +51,7 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
       <div className="w-full max-w-md rounded-xl bg-white p-8 shadow-lg">
         <div className="text-center">
-          <p className="text-2xl font-bold text-indigo-600">ProviderMatcher</p>
+          <p className="text-2xl font-bold text-indigo-600">ProviderRoute</p>
           <p className="mt-1 text-sm text-slate-500">Admin Dashboard</p>
         </div>
 

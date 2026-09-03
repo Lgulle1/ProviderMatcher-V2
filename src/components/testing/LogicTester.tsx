@@ -886,7 +886,7 @@ export default function LogicTester({ onClose, orgId }: LogicTesterProps) {
 
       <div className="flex flex-1 overflow-hidden">
         <div className="flex flex-1 flex-col overflow-hidden bg-slate-50">
-          <div className="bg-indigo-600 px-4 py-3 text-sm font-semibold text-white">ProviderMatcher Preview</div>
+          <div className="bg-indigo-600 px-4 py-3 text-sm font-semibold text-white">ProviderRoute Preview</div>
           <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
             {isLoading || !bundle ? (
               <p className="text-sm text-slate-500">Loading…</p>

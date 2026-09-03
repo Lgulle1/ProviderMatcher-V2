@@ -19,7 +19,7 @@ esbuild
     minify: isProd,
     outfile: 'dist/widget.js',
     format: 'iife',
-    globalName: 'ProviderMatcherWidget',
+    globalName: 'ProviderRouteWidget',
     define: {
       SUPABASE_URL: JSON.stringify(supabaseProjectUrl),
       SUPABASE_ANON_KEY: JSON.stringify(supabaseAnonKey),
