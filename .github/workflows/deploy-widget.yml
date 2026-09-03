@@ -41,3 +41,8 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./widget/dist
+          # publish_dir replaces the whole gh-pages branch on every deploy, so
+          # without this the custom-domain CNAME file gets silently wiped on
+          # the next merge to main and the Pages custom domain reverts to
+          # unset -- same failure shape as the nine-day-dead widget above.
+          cname: widget.providerroute.com
