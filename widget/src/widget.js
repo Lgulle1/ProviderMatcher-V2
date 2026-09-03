@@ -182,7 +182,20 @@ import { readableTextColor } from '../../src/shared/colorContrast'
           // the browser preflight fail with "Failed to fetch".
           { method: 'GET', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + supabaseAnonKey } }
         )
-        if (!response.ok) throw new Error('HTTP ' + response.status)
+        if (!response.ok) {
+          // The server sends a specific, actionable reason in the body (e.g.
+          // "Widget privacy configuration is incomplete", "Domain not
+          // authorized") -- surface it instead of leaving whoever's debugging
+          // to guess from a bare status code and dig through the Network tab.
+          var detail = ''
+          try {
+            var errorBody = await response.json()
+            if (errorBody && errorBody.error) detail = ': ' + errorBody.error
+          } catch (parseErr) {
+            /* body wasn't JSON -- fall back to the bare status */
+          }
+          throw new Error('HTTP ' + response.status + detail)
+        }
         this.data = await response.json()
       } catch (e) {
         console.warn('ProviderRoute: Failed to load widget data', e)
@@ -1703,7 +1716,16 @@ import { readableTextColor } from '../../src/shared/colorContrast'
           .then(function (res) {
             if (!res.ok) {
               if (res.status >= 500 && retriesLeft > 0) return attempt(retriesLeft - 1)
-              console.warn('[ProviderRoute] tracking failed (' + label + '): HTTP ' + res.status)
+              res
+                .clone()
+                .json()
+                .then(function (body) {
+                  var detail = body && body.error ? ': ' + body.error : ''
+                  console.warn('[ProviderRoute] tracking failed (' + label + '): HTTP ' + res.status + detail)
+                })
+                .catch(function () {
+                  console.warn('[ProviderRoute] tracking failed (' + label + '): HTTP ' + res.status)
+                })
             }
             return res
           })
